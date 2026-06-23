@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHEWSH CLI — .intent/ for every AI tool</title>
+  <meta name="description" content="The phewsh CLI: drop it in any project to create portable .intent/ context, run AI with full project context, sequence context for any tool, and sync across machines. curl -fsSL phewsh.com/install.sh | sh.">
+  <meta property="og:title" content="PHEWSH CLI — .intent/ for every AI tool">
+  <meta property="og:description" content="Your project's working memory. Define it once in .intent/, every AI tool reads it.">
+  <meta property="og:image" content="https://phewsh.com/assets/og/CLI.png">
+  <meta property="og:url" content="https://phewsh.com/cli">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="/assets/nav.js" defer></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0a0c0b;
+      --bg-card: rgba(17, 20, 19, 0.6);
+      --bg-code: #0d100f;
+      --bg-hover: rgba(255,255,255,0.03);
+      --text: #f0ebe1;
+      --text-muted: #afc3b9;
+      --text-dim: #828e8a;
+      --border: #1e2422;
+      --accent: #64d7c3;
+      --accent-glow: rgba(100, 215, 195, 0.15);
+      --warm: #ffc391;
+      --green: #64d7c3;
+      --yellow: #dc8c5a;
+    }
+
+    html, body {
+      min-height: 100vh;
+    }
+
+    body {
+      font-family: "Inter", -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ─── HEADER ─── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 20px 24px 8px;
+      flex-shrink: 0;
+    }
+    
+    .header .brand-svg:hover { opacity: 1; }
+    .header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    /* ─── HERO ─── */
+    .hero {
+      text-align: center;
+      padding: 8px 24px 16px;
+      flex-shrink: 0;
+    }
+    .hero .eyebrow {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 10px;
+      opacity: 0.8;
+    }
+    .hero h2 {
+      font-size: clamp(22px, 3.5vw, 32px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      margin-bottom: 10px;
+    }
+    .hero h2 em {
+      color: var(--accent);
+      font-style: normal;
+    }
+    .hero .subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+      max-width: 420px;
+      margin: 0 auto 16px;
+      line-height: 1.5;
+    }
+    .hero .soul-line {
+      font-size: 12px;
+      color: var(--text-dim);
+      font-style: italic;
+      opacity: 0.6;
+      margin-bottom: 16px;
+    }
+
+    /* ─── INSTALL BAR ─── */
+    .install-wrap {
+      display: flex;
+      justify-content: center;
+      padding: 0 24px 12px;
+      flex-shrink: 0;
+    }
+    .code-block {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      transition: border-color 0.25s, box-shadow 0.25s;
+      position: relative;
+    }
+    .code-block:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .code-block .prompt { color: var(--green); font-weight: 500; }
+    .code-block .cmd { color: var(--text); }
+    .code-block .copy-btn {
+      margin-left: 8px;
+      padding: 3px 10px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-dim);
+      font-family: "Inter", sans-serif;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .code-block:hover .copy-btn {
+      color: var(--accent);
+      border-color: rgba(100,215,195,0.25);
+    }
+    .code-block .copy-btn.copied {
+      color: var(--green);
+      border-color: rgba(100,215,195,0.3);
+    }
+
+    /* ─── 3-CARD GRID ─── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      padding: 8px 24px;
+      max-width: 900px;
+      margin: 0 auto;
+      width: 100%;
+      flex-shrink: 0;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 18px 18px;
+      position: relative;
+      transition: border-color 0.25s, transform 0.25s;
+      display: flex;
+      flex-direction: column;
+    }
+    .card:hover {
+      border-color: rgba(100,215,195,0.2);
+      transform: translateY(-2px);
+    }
+    .card .step-num {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: rgba(100,215,195,0.08);
+      color: var(--accent);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card h3 {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+    .card .card-code {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      cursor: pointer;
+      margin-bottom: 10px;
+      transition: border-color 0.2s;
+    }
+    .card .card-code:hover { border-color: rgba(100,215,195,0.25); }
+    .card .card-code .cc-text { color: var(--text); }
+    .card .card-code .cc-prompt { color: var(--green); margin-right: 4px; }
+    .card .card-code .cc-copy {
+      color: var(--text-dim);
+      font-size: 10px;
+      font-family: "Inter", sans-serif;
+      font-weight: 500;
+      transition: color 0.2s;
+      white-space: nowrap;
+    }
+    .card .card-code:hover .cc-copy { color: var(--accent); }
+    .card .card-code .cc-copy.copied { color: var(--green); }
+    .card .card-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-top: auto;
+    }
+    .card .card-desc strong {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    /* ─── INTEGRATIONS ─── */
+    .integrations {
+      padding: 16px 24px 8px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .integrations .int-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+    .int-row {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .int-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      transition: all 0.2s;
+      cursor: default;
+    }
+    .int-badge:hover {
+      border-color: rgba(100,215,195,0.2);
+      color: var(--text);
+    }
+    .int-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      opacity: 0.5;
+    }
+
+    /* ─── FOOTER ─── */
+    .footer {
+      margin-top: auto;
+      padding: 12px 24px 20px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .footer-links {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .footer-links a:hover { color: var(--accent); }
+    .footer-note {
+      font-size: 11px;
+      color: var(--text-dim);
+      opacity: 0.5;
+    }
+
+    /* ─── TOAST ─── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--text);
+      opacity: 0;
+      transition: all 0.3s ease;
+      pointer-events: none;
+      z-index: 100;
+      white-space: nowrap;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+        .header svg {
+      width: 26px;
+      height: 26px;
+      opacity: 0.6;
+      transition: opacity 0.3s;
+      filter: invert(1) brightness(1.5) saturate(0);
+    }
+    .header svg:hover {
+      opacity: 1;
+    }
+
+    /* ─── EXPANDABLE SECTIONS ─── */
+    .deep-dive {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px 24px 0;
+      width: 100%;
+    }
+    .deep-dive .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 14px;
+      text-align: center;
+    }
+    details {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 10px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    details:hover { border-color: rgba(100,215,195,0.15); }
+    details summary {
+      padding: 14px 18px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text);
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      user-select: none;
+    }
+    details summary::-webkit-details-marker { display: none; }
+    details summary::before {
+      content: '+';
+      font-family: "JetBrains Mono", monospace;
+      color: var(--accent);
+      font-size: 15px;
+      width: 18px;
+      flex-shrink: 0;
+      text-align: center;
+    }
+    details[open] summary::before { content: '−'; }
+    details[open] summary { border-bottom: 1px solid var(--border); }
+    .detail-body {
+      padding: 16px 18px 18px;
+    }
+    .detail-body p {
+      color: var(--text-muted);
+      font-size: 13px;
+      line-height: 1.7;
+      margin-bottom: 10px;
+    }
+    .detail-body p:last-child { margin-bottom: 0; }
+    .detail-body strong { color: var(--text); font-weight: 500; }
+    .detail-body code {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      background: var(--bg-code);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--accent);
+    }
+    .detail-body pre {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      overflow-x: auto;
+      margin: 10px 0;
+      line-height: 1.8;
+    }
+    .detail-body pre code { background: none; padding: 0; }
+    .detail-body .cmd-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .detail-body .cmd-row:last-child { border-bottom: none; }
+    .detail-body .cmd-name {
+      font-family: "JetBrains Mono", monospace;
+      color: var(--accent);
+      font-size: 12px;
+    }
+    .detail-body .cmd-desc { color: var(--text-muted); }
+    .ecosystem-flow {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin: 12px 0;
+    }
+    .ecosystem-flow .flow-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .ecosystem-flow .flow-row .layer {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 4px;
+      background: rgba(100,215,195,0.08);
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .ecosystem-flow .flow-row .desc {
+      color: var(--text-muted);
+    }
+    .ecosystem-flow .arrow {
+      color: var(--text-dim);
+      font-size: 11px;
+      padding-left: 8px;
+    }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 720px) {
+      .cards { grid-template-columns: 1fr; }
+      .hero h2 { font-size: 22px; }
+      .int-row { gap: 6px; }
+      .int-badge { font-size: 10px; padding: 4px 10px; }
+    }
+    @media (max-height: 700px) {
+      .header { padding-top: 12px; }
+      .hero { padding-bottom: 10px; }
+      .card { padding: 14px 14px 12px; }
+      .integrations { padding-top: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <!-- platform tabs: identical strip on every platform-facet page; script highlights where you are -->
+  <nav id="phewsh-platform-tabs" style="display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;padding:8px 16px;font-family:'Inter',-apple-system,sans-serif;font-size:12px;background:rgba(100,215,195,0.04);border-bottom:1px solid #1e2422;">
+    <span style="color:#828e8a;letter-spacing:0.06em;margin-right:8px;">PHEWSH platform</span>
+    <a data-path="/" href="/" title="Home" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">Home</a>
+    <a data-path="/demo" href="/demo" title="See it work — one budget across Claude, Cursor, local" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">How it works</a>
+    <a data-path="/cli" href="/cli" title="The terminal front door — curl -fsSL phewsh.com/install.sh | sh" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">CLI</a>
+    <a data-path="/platform" data-group="/platform,/cockpit,/mcp,/api" href="/platform" title="Docs — platform, cockpit, agents, API" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">Docs</a>
+    <a data-path="/cli#packs" href="/cli#packs" title="Opt-in workflow packs — Karpathy, GSD…" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">Packs</a>
+    <span style="color:#1e2422;margin:0 6px;">|</span>
+    <a href="/intent" title="The web workspace — parallel to the CLI, same projects, stays synced" style="color:#ffc391;text-decoration:none;padding:3px 10px;">Intent web app &#8599;</a>
+  </nav>
+  <script>(function(){var p=location.pathname.replace(/\/+$/,'')||'/';document.querySelectorAll('#phewsh-platform-tabs a[data-path]').forEach(function(a){var g=(a.getAttribute('data-group')||'').split(',');if(a.getAttribute('data-path')===p||g.indexOf(p)>-1){a.style.color='#64d7c3';a.style.background='rgba(100,215,195,0.10)';a.style.fontWeight='600';}});})();</script>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="brand-svg"><svg viewBox="0 0 682 688" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3183_89)">
+<path d="M306.462 4.85093C294.088 6.66788 281.937 8.2555 269.573 10.4951C261.118 14.3317 250.184 12.8736 242.575 18.4565C233.923 19.3491 227.163 24.1955 218.691 25.2898C211.885 28.3184 205.93 32.5921 198.633 34.5429C189.116 36.5763 182.166 43.8415 172.884 47.5038C164.201 52.1132 155.706 59.0579 146.545 64.5839C136.216 72.9122 124.496 80.2219 115.095 90.2008C99.7647 105.555 83.3641 120.264 70.4891 137.683C63.0188 147.273 57.0318 157.524 50.1735 167.375C44.5528 173.91 43.3678 182.416 38.1307 188.609C35.8172 196.147 31.6228 202.24 28.4186 209.311C27.538 217.501 21.7727 223.369 20.4816 231.447C18.2447 240.198 16.3422 248.922 12.7913 257.149C11.8174 268.175 6.50942 277.918 6.41703 289.268C5.02719 301.88 2.63926 314.366 3.37049 327.332C3.66549 347.436 2.28943 367.768 4.85429 387.72C6.72174 399.125 7.61845 410.419 10.4985 421.607C15.2436 428.624 14.17 438.434 18.4598 445.815C19.0362 455.444 22.8803 463.361 26.1258 471.861C30.9991 477.684 31.7912 486.024 35.0053 493.068C40.2423 499.26 41.4273 507.767 47.0481 514.302C56.1169 525.126 41.8692 538.409 48.6108 550.245C51.9827 558.41 52.6881 568.527 60.6768 574.768C65.0811 577.605 66.8428 581.567 65.8009 586.724C65.9009 595.247 68.9991 603.082 72.357 610.249C77.6458 618.875 87.0818 622.202 95.4928 625.256C103.26 632.082 115.081 618.632 119.253 632.616C125.61 640.722 134.751 645.349 144.195 647.257C154.962 652.389 169.006 650.854 179.88 647.134C187.177 649.085 193.132 653.358 199.938 656.387C208.128 657.268 213.996 663.033 222.074 664.324C229.114 667.267 236.958 668.319 243.695 672.014C253.638 673.635 262.017 679.439 272.912 678.848C283.972 682.903 296.706 681.965 308.415 684.235C332.84 684.734 357.317 685.104 381.717 683.745C394.372 680.997 407.106 680.227 419.809 677.93C427.46 673.858 437.303 674.697 444.352 669.968C452.877 668.237 460.098 665.006 468.068 662.302C473.188 656.923 481.654 657.239 487.739 653.385C495.187 649.636 502.37 646.192 510.086 642.097C519.264 634.856 529.25 629.013 539.001 622.388C550.314 614.682 559.282 603.819 570.646 596.139C581.366 587.337 590.768 577.03 598.784 565.835C608.658 556.857 615.021 544.974 623.347 535.086C628.418 524.524 635.116 515.046 640.886 504.925C646.243 497.675 649.299 489.881 651.826 481.484C655.534 474.723 658.124 467.175 659.763 459.349C663.929 451.797 664.99 442.931 667.453 434.602C670.987 426.205 672.101 416.869 675.007 407.993C674.486 395.693 679.11 384.453 678.163 372.075C678.267 347.346 679.122 322.525 677.185 297.857C674.676 286.826 674.338 275.521 671.682 264.538C667.381 257.222 668.505 247.312 663.721 240.454C662.132 232.211 658.758 225.172 656.514 217.383C654.583 209.962 650.063 203.918 647.137 197.067C644.035 189.957 639.596 183.764 637.302 176.107C632.364 168.524 628.164 159.517 622.134 151.748C614.574 141.134 607.181 129.87 597.457 120.644C588.626 107.66 577.145 96.1799 564.162 87.3484C554.936 77.6252 543.672 70.2318 533.058 62.672C524.572 56.4769 515.617 51.4176 506.837 47.0447C497.802 41.5802 490.082 35.5952 479.638 33.6681C472.954 26.3086 462.48 27.579 455.107 22.5C446.455 21.6074 439.695 16.761 431.223 15.6668C420.724 10.9518 408.199 11.3004 397.1 7.9764C383.546 6.34006 369.894 4.34038 356.123 3.45078C339.615 3.58642 322.766 2.25886 306.462 4.85093ZM375.222 23.6037C387.595 25.4207 399.747 27.0083 412.111 29.2479C419.483 33.1222 429.196 32.1954 435.983 37.2093C444.635 38.1019 451.395 42.9483 459.867 44.0426C466.939 47.2468 473.031 51.4412 480.57 53.7547C486.367 58.0711 493.131 60.7042 499.994 63.628C508.582 67.6236 516.722 75.077 525.762 80.2113C535.516 87.8753 545.615 95.7076 555.237 103.925C567.486 115.588 579.761 127.443 589.623 141.13C598.416 150.692 605.645 161.574 612.757 172.063C618.375 180.197 623.003 187.868 626.215 196.82C631.088 202.643 631.881 210.983 635.095 218.027C640.499 223.024 639.979 231.371 643.889 237.441C645.182 246.664 650.692 254.156 650.722 263.991C655.202 273.896 656.135 285.178 657.466 296.349C662.279 307.146 657.335 320.301 661.202 331.462C666.088 344.244 659.481 357.046 659.668 369.926C661.053 382.759 656.137 394.246 656.058 406.864C652.209 414.862 652.736 424.593 648.093 431.97C647.219 441.467 643.492 449.454 640.886 458.043C638.417 465.006 635.091 471.917 632.466 478.606C629.58 486.216 625.848 492.887 622.134 499.892C615.802 509.933 610.495 519.657 603.639 529.622C593.655 541.143 585.842 554.452 574.46 564.987C562.768 576.796 551.246 589.058 537.746 598.689C526.992 606.977 516.11 614.947 504.929 622.13C498.394 627.751 489.887 628.936 483.695 634.173C476.038 636.467 469.845 640.906 462.735 644.009C455.99 647.646 448.025 648.923 440.857 651.822C433.092 654.527 425.285 656.919 417.324 659.513C404.574 661.126 392.144 663.791 379.33 665.646C367.626 666.857 354.424 663.773 343.967 669.012C333.262 663.796 319.824 666.824 307.888 665.719C296.972 663.56 285.056 663.761 274.714 660.592C264.64 659.9 256.572 655.149 247.078 653.385C238.417 651.916 231.215 647.689 222.444 646.178C215.785 640.58 204.842 640.184 200.196 631.547C204.406 617.223 216.953 626.733 225.2 623.693C235.027 621.909 243.489 618.861 251.508 612.708C259.97 606.303 264.456 597.161 268.497 588.58C269.708 577.315 273.565 568.712 268.956 558.058C269.174 547.521 256.309 540.448 269.773 532.156C273.394 528.603 277.78 521.609 280.78 529.749C285.978 539.592 290.967 552.844 302.7 557.414C310.259 565.415 320.882 567.463 331.415 568.827C342.492 569.065 354.19 569.866 364.283 565.872C376.877 562.417 386.753 552.961 394.232 542.096C400.171 533.667 402.893 524.059 403.288 513.506C404.261 502.427 402.352 492.015 399.27 481.854C394.797 474.068 390.081 464.637 381.656 458.629C373.103 451.614 363.197 448.577 353.344 445.542C340.908 441.068 328.456 446.216 316.331 448.06C306.579 454.363 294.989 460.589 288.281 471.31C285.844 484.87 271.916 485.544 259.803 485.052C252.069 488.795 243.066 487.514 234.576 487.735C234.649 480.697 232.232 473.723 228.784 468.261C226.231 457.572 213.744 456.983 206.447 451.792C194.738 448.238 184.925 456.779 176.42 443.721C168.147 438.01 158.878 435.068 148.626 434.602C135.726 434.491 124.612 440.929 115.108 449.334C110.971 466.018 92.5346 459.672 82.855 469.223C73.9339 476.571 71.3629 486.886 68.9263 497.112C67.0434 512.631 56.7126 492.14 54.255 487.489C51.3905 480.408 48.4014 473.905 44.3817 467.605C44.1413 458.63 37.1216 453.366 36.7157 444.349C32.9041 437.027 33.4874 427.345 28.7543 420.264C25.8566 408.647 25.7953 396.674 22.9397 384.937C21.6302 358.702 21.6302 332.351 22.9397 306.117C25.7085 293.502 26.4562 280.792 28.7543 268.123C32.6669 261.424 32.7501 253.064 36.7157 246.581C37.7199 236.792 41.309 228.623 44.3817 219.863C49.7881 212.633 51.6613 202.886 56.8835 194.758C62.6331 188.321 63.2482 178.863 70.1399 172.559C76.1919 161.168 84.7276 151.347 92.4589 140.782C102.765 131.049 109.375 118.228 120.888 109.549C132.328 102.904 139.792 91.0903 151.471 84.8079C160.217 75.7976 171.742 72.092 180.975 64.5839C188.69 60.4886 195.873 57.0448 203.321 53.2956C209.192 49.1282 217.015 48.2087 222.992 44.3783C230.962 41.6744 238.183 38.4432 246.708 36.7124C253.757 31.984 263.6 32.8225 271.251 28.751C283.756 26.4479 296.35 25.8082 308.757 22.9403C330.101 21.6482 351.583 21.6482 372.927 22.9403L375.222 23.6037ZM159.565 454.918C171.984 456.913 172.894 478.651 187.38 474.278C195.024 470.06 202.978 467.329 210.307 474.455C225.474 482.408 202.504 503.427 221.075 505.848C235.014 509.284 247.53 503.432 261 503.387C278.65 503.293 256.356 521.132 250.166 525.241C238.049 531.39 234.392 544.274 246.708 552.681C252.008 563.821 252.2 579.731 245.448 590.401C237.695 599.154 228.015 606.063 216.522 606.38C209.077 603.623 197.712 594.806 191.475 605.242C189.86 617.038 179.942 627.753 168.551 631.067C154.374 633.589 139.272 629.981 131.877 616.611C128.061 608.277 126.096 588.834 112.81 601.736C105.984 613.278 94.5476 608.264 88.2299 599.322C83.0491 596.336 83.827 589.034 86.1164 584.625C88.5159 580.082 89.1942 572.663 83.7847 569.694L65.8009 551.959C66.2013 545.54 65.0324 538.472 66.3533 532.435C72.8998 526.283 78.6694 518.645 86.9804 514.984C93.0154 505.518 82.3289 490.588 95.3121 482.122C103.654 472.544 117.236 488.986 122.059 474.563C127.229 464.287 137.089 452.551 150.188 453.355C153.237 453.619 157.014 452.989 159.565 454.918ZM353.344 464.294C362.316 468.173 371.937 474.494 377.771 483.757C384.566 493.283 385.787 505.885 384.164 518.208C380.603 528.296 375.291 540.696 363.424 544.453C355.683 552.092 342.486 550.071 331.777 549.997C320.684 548.209 310.458 542.104 303.777 532.224C297.163 522.715 295.876 510.158 297.519 497.893C300.48 488.188 305.978 479.085 314.533 472.154C322.701 466.069 332.097 463.233 342.405 462.732C345.954 463.036 350.218 462.336 353.344 464.294Z" fill="currentColor"/>
+<path d="M277.161 274.485C269.307 286.275 259.242 297.878 247.078 304.896C240.812 308.444 233.819 310.846 227.832 314.879C216.371 317.028 205.276 320.167 193.178 318.897C182.247 318.828 172.607 314.549 162.433 312.586C155.361 309.382 149.269 305.187 141.73 302.874C133.246 293.286 120.009 319.874 136.966 319.419C142.557 324.204 150.196 326.062 156.44 329.899C165.48 334.055 176.032 334.153 185.741 337.283C199.643 339.507 212.625 335.586 226.03 334.128C233.685 331.19 240.972 328.44 248.295 325.211C259.943 320.066 270.61 311.18 280.306 302.581C284.569 292.081 300.274 282.263 293.96 271.949C294.539 264.978 279.098 270.638 277.161 274.485Z" fill="currentColor"/>
+<path d="M281.459 128.307C277.709 135.755 274.265 142.938 270.17 150.653C261.775 161.581 254.935 174.317 243.451 183.215C234.121 190.593 224.04 196.77 214.447 202.859C205.795 203.751 199.035 208.598 190.562 209.692C184.92 213.864 169.748 215.195 177.435 225.726C184.571 235.834 195.432 226.602 204.885 225.196C211.956 222.288 220.364 221.572 226.017 216.279C237.1 210.632 247.889 204.853 256.79 195.183C266.912 188.281 273.247 179.292 280.965 169.71C284.465 162.318 288.808 155.884 291.294 147.978C294.929 141.774 301.968 127.243 289.383 125.357C286.556 126.081 279.676 122.703 281.459 128.307Z" fill="currentColor"/>
+<path d="M386.552 127.519C382.262 136.459 389.59 144.591 391.806 153.064C398.658 162.121 402.88 173.107 411.597 181.633C420.239 192.037 431.302 199.598 441.458 208.191C449.76 213.173 457.176 218.395 465.604 221.947C474.076 223.041 480.836 227.888 489.488 228.78C496.124 239.17 515.664 217.476 501.159 215.36C495.351 211.424 487.538 210.902 481.746 206.566C473.452 205.543 467.12 200.35 459.956 197.067C449.623 190.254 438.445 184.276 429.643 174.881C422.272 164.579 413.744 154.743 408.04 143.934C405.762 134.653 399.854 118.451 386.552 127.519Z" fill="currentColor"/>
+<path d="M387.724 276.421C389.361 290.633 402.736 300.445 412.326 310.472C420.379 318.045 430.305 322.559 438.65 327.877C448.174 331.444 457.465 334.979 468.37 335.543C478.691 338.872 492.306 339.047 502.536 335.046C513.19 334.994 522.062 331.024 531.249 327.38C539.247 323.462 553.094 321.645 553.374 308.873C555.725 301.285 546.338 302.024 541.79 300.666C535.992 304.983 529.229 307.616 522.366 310.54C515.972 314.39 507.579 315.096 500.454 318.311C488.933 318.604 476.128 320.705 465.368 316.79C455.769 316.493 448.524 311.822 440.857 308.021C430.742 302.094 418.855 295.315 412.728 284.185C408.057 274.324 400.542 266.572 388.616 268.953C386.54 268.716 388.321 275.004 387.724 276.421Z" fill="currentColor"/>
+<path d="M315.839 23.6034C330.611 26.265 346.122 25.2992 361.109 24.2576C355.679 20.3731 334.971 22.5195 323.689 22.3623C321.079 22.6544 318.235 22.3384 315.839 23.6034Z" fill="currentColor"/>
+<path d="M318.964 1.72536C331.686 4.34667 345.223 3.40568 358.179 2.37498C352.487 -1.51299 333.031 0.458639 322.095 0.80855L320.38 1.07574L318.964 1.72536Z" fill="currentColor"/>
+<path d="M0.166336 342.401C-0.650458 348.864 1.71892 372.512 3.05075 354.323C2.81021 345.168 4.85603 327.403 1.07945 323.502C0.123274 329.746 0.246504 336.101 0.166336 342.401Z" fill="currentColor"/>
+<path d="M318.964 686.202C333.736 688.864 349.247 687.898 364.234 686.856C358.804 682.972 338.096 685.118 326.814 684.961C324.204 685.253 321.36 684.937 318.964 686.202Z" fill="currentColor"/>
+<path d="M678.393 343.964C678.951 351.313 677.33 369.445 680.615 370.188C681.924 352.764 681.924 335.164 680.615 317.739C677.302 317.006 679.001 338.225 678.393 343.964Z" fill="currentColor"/>
+</g>
+<defs>
+<clipPath id="clip0_3183_89">
+<rect width="681.597" height="687.921" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</div>
+    <h1>PHEWSH CLI</h1>
+    <div class="brand-svg"><svg viewBox="0 0 669 707" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M277.325 4.6461C156.603 22.2674 53.1699 114.827 16.8026 230.462C-25.4832 355.152 13.8297 503.308 114.634 588.647C164.731 633.998 230.162 659.003 296.008 669.724C326.197 684.462 354.378 708.937 390.256 706.087C402.15 705.638 414.927 708.646 424.777 700.188C446.08 689.513 458.639 667.215 463.391 644.565C519.007 622.208 567.183 582.581 603.884 535.584C687.394 423.534 690.57 258.212 609.424 144.006C546.677 51.3819 435.089 -4.58882 323.343 0.285666C307.931 0.749665 292.552 2.22053 277.325 4.6461ZM413.05 25.6037C528.487 54.851 623.29 153.189 646.288 270.311C676.08 398.636 612.531 539.39 500.925 607.484C486.945 617.376 458.728 636.273 462.52 605.308C457.265 562.785 445.169 521.165 431.23 480.744C421.236 451.774 398.504 430.791 377.271 409.882C376.541 391.857 372.191 373.519 373.722 355.817C393.32 347.685 391.507 330.089 373.645 322.115C364.73 299.97 366.895 258.221 332.419 261.521C304.953 265.549 303.085 295.788 301.11 317.638C304.59 333.834 269.388 325.612 282.917 345.689C290.33 353.863 308.554 352.838 303.472 367.764C301.681 375.698 307.239 389.9 300.435 393.56C270.491 394.135 254.501 424.151 247.056 449.423C244.942 466.616 237.253 476.903 221.996 461.97C210.234 457.819 197.163 455.062 189.437 466.993C181.42 472.233 176.41 478.801 179.003 488.728C179.606 499.185 176.433 510.916 185.642 518.468C214.58 554.922 236.313 596.439 264.587 633.267C281.418 644.187 272.798 653.875 256.361 645.599C134.81 614.804 36.1329 506.307 18.9964 381.743C6.72664 319.198 21.9773 254.333 46.7414 196.739C82.5744 124.041 146.229 65.9533 221.835 36.6918C260.17 20.689 302.048 14.0761 343.462 17.0306C366.872 17.5113 390.423 19.1798 413.05 25.6037ZM212.727 158.135C181.298 168.457 186.992 220.058 218.985 225.314C232.344 232.864 247.82 219.797 256.161 210.177C261.057 198.477 268.057 178.212 255.366 169.102C244.999 157.346 227.534 151.311 212.727 158.135ZM424.604 158.344C392.804 169.804 401.51 225.727 436.149 225.034C465.686 231.702 486.49 194.337 470.046 170.997C461.246 156.686 439.407 149.961 424.604 158.344ZM347.51 282.494C357.464 309.625 354.001 339.932 357.109 368.404C356.54 383.337 365.933 417.539 340.872 399.495C328.722 397.213 315.72 397.464 318.76 381.57C315.636 352.772 316.176 323.761 315.777 294.838C322.406 284.011 334.934 268.639 347.51 282.494ZM338.088 413.69C355.763 419.337 383.704 425.965 388.08 444.82C361.512 435.151 326.344 418.041 301.328 440.738C285.111 461.055 274.947 486.972 272.134 512.488C274.221 522.065 289.88 555.51 271.717 543.316C250.683 523.961 246.924 492.902 257.488 467.225C265.037 442.755 276.154 407.648 306.98 406.775C317.6 407.722 327.823 411.007 338.088 413.69ZM364.192 451.345C381.301 458.87 399.959 466.6 414.106 478.465C433.203 527.221 447.052 579.228 447.157 631.844C448.532 657.989 432.87 683.436 406.594 689.437C371.535 699.409 337.841 675.833 311.115 655.854C279.254 631.788 257.487 598.061 237.753 564.074C224.226 540.503 203.715 520.934 193.549 495.641C189.394 469.837 218.743 471.968 231.565 485.351C237.206 516.126 247.143 549.82 277.038 565.433C298.021 577.644 333.383 592.29 348.23 563.759C356.216 543.728 350.148 521.967 349.057 501.172C337.309 500.16 333.264 505.566 336.344 516.894L337.974 556.317C320.024 575.685 298.143 557.578 295.186 535.41C281.658 509.853 292.421 481.68 307.118 459.414C313.161 450.448 318.571 439.104 331.28 443.079C342.61 443.782 353.622 447.419 364.192 451.345Z" fill="currentColor"/>
+</svg>
+</div>
+  </div>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="eyebrow">Continuity Layer</div>
+    <h2>Portable project context <em>for every AI tool.</em></h2>
+    <p class="subtitle">One <code>.intent/</code> folder. Define success once, work in any native tool, verify what happened.</p>
+    <p class="soul-line">"Don't adapt to software — let software adapt to you."</p>
+  </div>
+
+  <!-- Main install -->
+  <div class="install-wrap">
+    <div class="code-block" onclick="copy(this, 'curl -fsSL phewsh.com/install.sh | sh')">
+      <span class="prompt">$</span>
+      <span class="cmd">curl -fsSL phewsh.com/install.sh | sh</span>
+      <span class="copy-btn">Copy</span>
+    </div>
+    <p style="text-align:center;font-size:11px;color:#777;margin:10px 0 0">Node-aware, nvm-aware, never sudo. No curl? Fallback: <code style="color:var(--accent);">npm install -g phewsh</code></p>
+  </div>
+
+  <!-- 3-Card Command Grid -->
+  <div class="cards">
+    <!-- Install -->
+    <div class="card">
+      <div class="step-num">1</div>
+      <h3>Install</h3>
+      <div class="card-code" onclick="copy(this, 'curl -fsSL phewsh.com/install.sh | sh'); event.stopPropagation();">
+        <span><span class="cc-prompt">$</span><span class="cc-text">curl -fsSL phewsh.com/install.sh | sh</span></span>
+        <span class="cc-copy">Copy</span>
+      </div>
+      <p class="card-desc">Global CLI. <strong>Node.js 18+</strong> required.</p>
+    </div>
+
+    <!-- Init -->
+    <div class="card">
+      <div class="step-num">2</div>
+      <h3>Init</h3>
+      <div class="card-code" onclick="copy(this, 'phewsh init'); event.stopPropagation();">
+        <span><span class="cc-prompt">$</span><span class="cc-text">phewsh init</span></span>
+        <span class="cc-copy">Copy</span>
+      </div>
+      <p class="card-desc">Creates your <code>.intent/</code> — portable project truth (vision, plan, constraints). The four words read from it.</p>
+    </div>
+
+    <!-- Watch -->
+    <div class="card">
+      <div class="step-num">3</div>
+      <h3>Sync</h3>
+      <div class="card-code" onclick="copy(this, 'phewsh watch'); event.stopPropagation();">
+        <span><span class="cc-prompt">$</span><span class="cc-text">phewsh watch</span></span>
+        <span class="cc-copy">Copy</span>
+      </div>
+      <p class="card-desc">Syncs one canonical core into <strong>CLAUDE.md</strong>, <strong>AGENTS.md</strong>, <strong>GEMINI.md</strong>, <strong>.cursorrules</strong>, and cloud.</p>
+    </div>
+  </div>
+
+  <!-- Integrations -->
+  <div class="integrations">
+    <div class="int-label">Works with</div>
+    <div class="int-row">
+      <div class="int-badge"><span class="dot"></span>Claude Code</div>
+      <div class="int-badge"><span class="dot"></span>Cursor</div>
+      <div class="int-badge"><span class="dot"></span>Hermes Agent</div>
+      <div class="int-badge"><span class="dot"></span>Codex CLI</div>
+      <div class="int-badge"><span class="dot"></span>OpenClaw</div>
+    </div>
+    <p style="margin-top:14px;font-size:.82rem;color:rgba(255,255,255,0.45);text-align:center;">
+      No API key required — <code>phewsh ai</code> runs through the agent CLIs you already
+      have, on their own logins (Claude subscription, ChatGPT plan, Google account).
+    </p>
+  </div>
+
+  <!-- Packs — opt-in workflow opinions layered on top of continuity -->
+  <div class="packs" id="packs" style="margin-top:64px;max-width:760px;margin-left:auto;margin-right:auto;">
+    <div class="section-label" style="text-align:center;">Packs</div>
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(1.3rem,3.4vw,1.9rem);letter-spacing:-0.02em;text-align:center;margin:8px auto 14px;">One continuity layer.<br><em style="color:var(--accent);font-style:normal;">Many schools of thought.</em></h2>
+    <p style="font-size:0.96rem;line-height:1.7;color:rgba(255,255,255,0.72);text-align:center;max-width:600px;margin:0 auto 32px;">
+      phewsh's core is continuity — your project truth, shared across every AI tool. <strong>Packs</strong> are opt-in
+      workflow opinions you layer on top: proven guidelines from people who've shipped. Always attributed,
+      project-scoped, and reversible — nothing is written without your <code>y/N</code>.
+    </p>
+
+    <div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));">
+      <div class="card">
+        <h3>karpathy-style <span style="font-family:monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(0,232,245,0.75);border:1px solid rgba(0,232,245,0.3);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;">vendored</span></h3>
+        <p class="card-desc">Andrej Karpathy's coding guidelines — think before coding, prefer simplicity, make surgical changes, drive loops by goals. Written as a clearly-marked, removable block in your <code>CLAUDE.md</code> / <code>AGENTS.md</code>.</p>
+        <div class="card-code" onclick="copy(this, 'phewsh pack install karpathy-style'); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install karpathy-style</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,0.4);">source: <a href="https://github.com/multica-ai/andrej-karpathy-skills" style="color:rgba(0,232,245,0.7);">github.com/multica-ai/andrej-karpathy-skills</a></p>
+      </div>
+      <div class="card">
+        <h3>gsd <span style="font-family:monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;">linked</span></h3>
+        <p class="card-desc">Get Shit Done — a Claude-centric workflow (hooks, commands, planning). Its own tool, so phewsh points you at the upstream installer rather than vendoring it.</p>
+        <div class="card-code" onclick="copy(this, 'phewsh pack install gsd'); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install gsd</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,0.4);">source: <a href="https://github.com/gsd-build/get-shit-done" style="color:rgba(0,232,245,0.7);">github.com/gsd-build/get-shit-done</a></p>
+      </div>
+    </div>
+
+    <p style="margin-top:22px;font-size:.84rem;color:rgba(255,255,255,0.5);text-align:center;">
+      List them with <code>phewsh pack</code> · reverse cleanly with <code>phewsh pack remove &lt;name&gt;</code> · or inside the
+      <code>phewsh</code> front door, just type <code>/pack</code>.
+    </p>
+  </div>
+
+  <!-- How it works — laymen first, then the real mechanics -->
+  <div class="how-it-works" style="margin-top:64px;max-width:760px;margin-left:auto;margin-right:auto;">
+    <div class="section-label" style="text-align:center;">How it works</div>
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(1.3rem,3.4vw,1.9rem);letter-spacing:-0.02em;text-align:center;margin:8px auto 14px;">Is phewsh a wrapper? <em style="color:var(--accent);font-style:normal;">No.</em><br>It's the layer <em style="font-style:italic;">above</em> your tools.</h2>
+
+    <p style="font-size:0.96rem;line-height:1.7;color:rgba(255,255,255,0.72);text-align:center;max-width:600px;margin:0 auto 32px;">
+      In plain terms: you write down <em>what you're building</em> once, and every AI tool you
+      already use — Claude Code, Codex, Cursor, Gemini — reads it and stays on the same page.
+      You don't switch tools. You don't re-explain. They share one memory.
+    </p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:1px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.08);margin-bottom:28px;">
+      <div style="background:#0d0d10;padding:20px 18px;">
+        <div style="font-family:monospace;font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(0,232,245,0.7);margin-bottom:8px;">1 · Capture</div>
+        <p style="font-size:0.82rem;line-height:1.6;color:rgba(255,255,255,0.6);margin:0;"><code>.intent/</code> is plain markdown + JSON, committed with your code. Your goal, constraints, and the decisions you've made. Not locked to phewsh — any tool can read it.</p>
+      </div>
+      <div style="background:#0d0d10;padding:20px 18px;">
+        <div style="font-family:monospace;font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(0,232,245,0.7);margin-bottom:8px;">2 · Sequence</div>
+        <p style="font-size:0.82rem;line-height:1.6;color:rgba(255,255,255,0.6);margin:0;">phewsh compiles one canonical core into each tool's <em>native</em> file — shared truth inside a managed block, tool-specific notes preserved outside it.</p>
+      </div>
+      <div style="background:#0d0d10;padding:20px 18px;">
+        <div style="font-family:monospace;font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(0,232,245,0.7);margin-bottom:8px;">3 · Work native</div>
+        <p style="font-size:0.82rem;line-height:1.6;color:rgba(255,255,255,0.6);margin:0;">Accepted success criteria travel with the verified brief into <em>your</em> installed tool, using its own login and native interface.</p>
+      </div>
+      <div style="background:#0d0d10;padding:20px 18px;">
+        <div style="font-family:monospace;font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(0,232,245,0.7);margin-bottom:8px;">4 · Verify &amp; reconcile</div>
+        <p style="font-size:0.82rem;line-height:1.6;color:rgba(255,255,255,0.6);margin:0;">After exit, phewsh checks repository evidence, reports pass/fail/unknown/human verdicts, and updates shared intent only after your approval.</p>
+      </div>
+    </div>
+
+    <div style="background:rgba(0,232,245,0.04);border:1px solid rgba(0,232,245,0.18);border-radius:6px;padding:22px 24px;">
+      <p style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:0.95rem;margin:0 0 12px;color:#fff;">What sets it apart from every other CLI harness</p>
+      <p style="font-size:0.88rem;line-height:1.7;color:rgba(255,255,255,0.66);margin:0 0 10px;">
+        Claude Code, Codex, Aider, Cursor, Goose — they're all <strong>execution engines</strong>. Each starts
+        cold, asks "what are you building?" again, and competes with the others for the task. They're
+        interchangeable, and none of them remember across the others.
+      </p>
+      <p style="font-size:0.88rem;line-height:1.7;color:rgba(255,255,255,0.66);margin:0 0 10px;">
+        phewsh is the one thing that <strong>isn't</strong> an engine. It keeps <strong>no model of its own</strong>, holds
+        <strong>no capability list</strong>, and never sees your subscription credentials. It passes your prompt
+        straight through to the real tool — so the moment Claude Code or Codex ships something new,
+        <strong>phewsh inherits it for free</strong>. Nothing to update on our end.
+      </p>
+      <p style="font-size:0.88rem;line-height:1.7;color:rgba(255,255,255,0.78);margin:0;">
+        The result: one shared memory across all of them, a record of what you decided and kept, and
+        continuity that works <em>even when you never launch phewsh</em>. That cross-tool record is the moat —
+        not the routing. <strong>Swap the engine without rebuilding the car.</strong>
+      </p>
+    </div>
+  </div>
+
+  <!-- Deep Dive -->
+  <div class="deep-dive">
+    <div class="section-label">Go deeper</div>
+
+    <details>
+      <summary>No API key needed — your subscriptions work</summary>
+      <div class="detail-body">
+        <p>phewsh is not another agent. It's the layer that uses the ones you already have. If <strong>Claude Code, Codex CLI, Gemini CLI, Cursor Agent, or OpenCode</strong> is installed, phewsh executes through it on <strong>its own login</strong> — your Claude subscription, your ChatGPT plan, your Google account. No API credits burned.</p>
+        <div class="cmd-row"><span class="cmd-name">phewsh ai run "…"</span><span class="cmd-desc">Auto-detects an installed agent CLI when no key is set</span></div>
+        <div class="cmd-row"><span class="cmd-name">phewsh ai run -p codex "…"</span><span class="cmd-desc">Pin a specific harness (claude-code, codex, gemini, cursor, opencode)</span></div>
+        <div class="cmd-row"><span class="cmd-name">phewsh ai providers</span><span class="cmd-desc">See what's installed and what's configured</span></div>
+        <p>Prefer raw APIs? OpenRouter, Anthropic, Groq, Ollama and <a href="/api" style="color:var(--accent)">the PHEWSH gateway</a> (pooled credits, budget-gated) all work too via <code>phewsh login --set-key</code>.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>One package, one system</summary>
+      <div class="detail-body">
+        <p><strong><code>phewsh</code></strong> — everything. Intent authoring, sync, the bridges, receipts, dispatch — <em>and</em> the MCP server, bundled. <code>phewsh mcp setup</code> wires it into Claude Code, Cursor, or any MCP client via <code>phewsh mcp serve --stdio</code>. An <em>interactive</em> agent session gets your project's briefing, task queue, and enforcement gate — and shares state with the bridges, so everything lands in the same <a href="/intent/receipts" style="color:var(--accent)">receipts</a>. No second install.</p>
+        <p>Rule of thumb: <strong><code>phewsh serve</code></strong> dispatches tasks <em>to</em> your agents from the web. <strong><code>phewsh mcp setup</code></strong> lets agents pull tasks <em>from</em> PHEWSH mid-session. See it live at <a href="/mcp" style="color:var(--accent)">/mcp</a>.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>The Ecosystem</summary>
+      <div class="detail-body">
+        <p><strong>PHEWSH sits above every AI system as the continuity layer.</strong></p>
+        <div class="ecosystem-flow">
+          <div class="flow-row"><span class="layer">ChatGPT / Claude</span><span class="desc">Reasoning models & conversational interfaces</span></div>
+          <div class="arrow">↓</div>
+          <div class="flow-row"><span class="layer">Claude Code / Hermes</span><span class="desc">Execution agents that actually perform work</span></div>
+          <div class="arrow">↓</div>
+          <div class="flow-row"><span class="layer">Honcho</span><span class="desc">Persistent memory + contextual continuity</span></div>
+          <div class="arrow">↓</div>
+          <div class="flow-row"><span class="layer">MCP</span><span class="desc">Standard protocol for connecting tools & data</span></div>
+          <div class="arrow">↓</div>
+          <div class="flow-row"><span class="layer">PHEWSH</span><span class="desc">Cross-system continuity coordinating all of it</span></div>
+        </div>
+        <p>Or simpler: <strong>Models think. Agents act. Memory remembers. MCP connects. PHEWSH keeps everything continuous.</strong></p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Why continuity matters</summary>
+      <div class="detail-body">
+        <p>The AI ecosystem is fragmenting hard. Different models excel at different things. APIs change. Pricing shifts. Providers disappear. Context gets trapped inside silos.</p>
+        <p>Right now people repeatedly <strong>re-upload context, re-explain projects, rebuild prompts, migrate workflows manually,</strong> and lose continuity between devices, tools, and models.</p>
+        <p><strong>PHEWSH's value:</strong> your workflow survives even if your tools change. Use whatever AI is best today without losing continuity tomorrow.</p>
+        <p><em>"Swap the engine without rebuilding the car."</em></p>
+      </div>
+    </details>
+
+    <details>
+      <summary>All commands</summary>
+      <div class="detail-body">
+        <p>Everything works as <code>phewsh &lt;cmd&gt;</code> from terminal or <code>/&lt;cmd&gt;</code> inside a session. The whole idea is four plain words — <strong>Project · Next · Work · Record</strong> — and they work even with no AI in the loop.</p>
+        <div class="cmd-row"><span class="cmd-name">phewsh</span><span class="cmd-desc">Open session — create, plan, work with AI</span></div>
+        <div class="cmd-row"><span class="cmd-name">status</span><span class="cmd-desc">All four words at a glance — Project · Next · Work · Record</span></div>
+        <div class="cmd-row"><span class="cmd-name">next</span><span class="cmd-desc">NEXT — queue work and define accepted success criteria</span></div>
+        <div class="cmd-row"><span class="cmd-name">brief</span><span class="cmd-desc">Verified project state + the accepted work contract for any harness</span></div>
+        <div class="cmd-row"><span class="cmd-name">work</span><span class="cmd-desc">WORK — native handoff, evidence-backed postflight, and current verdicts</span></div>
+        <div class="cmd-row"><span class="cmd-name">wrap / reconcile</span><span class="cmd-desc">Observe evidence, then approve the exact shared-record update</span></div>
+        <div class="cmd-row"><span class="cmd-name">remember</span><span class="cmd-desc">RECORD — jot a decision so it sticks &amp; every tool inherits it</span></div>
+        <div class="cmd-row"><span class="cmd-name">clarify</span><span class="cmd-desc">Turn a messy idea into .intent/ artifacts</span></div>
+        <div class="cmd-row"><span class="cmd-name">intent</span><span class="cmd-desc">Create, view, evolve .intent/ (--init, --status, --evolve)</span></div>
+        <div class="cmd-row"><span class="cmd-name">gate</span><span class="cmd-desc">Set constraints: budget, time, skill, urgency</span></div>
+        <div class="cmd-row"><span class="cmd-name">ai</span><span class="cmd-desc">One-shot prompt with .intent/ context</span></div>
+        <div class="cmd-row"><span class="cmd-name">watch</span><span class="cmd-desc">Auto-sync .intent/ → native harness files + cloud</span></div>
+        <div class="cmd-row"><span class="cmd-name">context</span><span class="cmd-desc">Export .intent/ (--claude, --copy, --file)</span></div>
+        <div class="cmd-row"><span class="cmd-name">push / pull</span><span class="cmd-desc">Manual sync to/from phewsh.com/intent</span></div>
+        <div class="cmd-row"><span class="cmd-name">serve</span><span class="cmd-desc">Execution bridge — run from phewsh.com/intent</span></div>
+        <div class="cmd-row"><span class="cmd-name">mcp</span><span class="cmd-desc">Connect AI agents via MCP protocol</span></div>
+        <div class="cmd-row"><span class="cmd-name">receipts</span><span class="cmd-desc">Proof trail — what agents actually did, with evidence</span></div>
+        <div class="cmd-row"><span class="cmd-name">update</span><span class="cmd-desc">Update phewsh to the latest version</span></div>
+        <div class="cmd-row"><span class="cmd-name">login</span><span class="cmd-desc">Identity + API key + cloud sync</span></div>
+        <div class="cmd-row"><span class="cmd-name">link</span><span class="cmd-desc">Link local .intent/ to cloud project</span></div>
+      </div>
+    </details>
+
+    <details>
+      <summary>The Decision Gate</summary>
+      <div class="detail-body">
+        <p>Part of <strong>Project</strong>: set the constraints that shape every AI response — and decide <em>whether</em> to build before you build.</p>
+        <pre><code><span style="color:var(--accent)">phewsh ></span> /gate
+<span style="color:var(--text-dim)">  Budget?     $50
+  Time?       15 hrs/week
+  Skill?      expert
+  Urgency?    high</span></code></pre>
+        <p>When you ask "what should I do next?", the answer respects what you can actually spend. No more AI suggesting $500 solutions to $50 problems.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>MCP Server for AI agents</summary>
+      <div class="detail-body">
+        <p>Any MCP-capable agent can connect, get tasks, report results, and chain autonomously.</p>
+        <pre><code><span style="color:var(--green)">$</span> phewsh mcp setup    <span style="color:var(--text-dim)"># add to Claude Code config</span></code></pre>
+        <p><strong>Agent tools:</strong> <code>phewsh_start</code>, <code>phewsh_next_task</code>, <code>phewsh_complete_task</code>, <code>phewsh_flag_blocker</code>, <code>phewsh_get_context</code></p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Security &amp; privacy — what we verified</summary>
+      <div class="detail-body">
+        <p style="color:rgba(255,255,255,0.55);font-size:0.82rem;">An honest report of how phewsh handles your data, traced from the source. Last audited 2026-06-13 against the published CLI.</p>
+        <p><strong>Your prompts and code stay yours.</strong> phewsh runs locally. When it executes through an installed tool (Claude Code, Codex…), it uses <em>that tool's own login</em> — your Claude subscription, your ChatGPT plan. phewsh never sees those credentials and never proxies your conversations through our servers.</p>
+        <p><strong>API keys are stored owner-only.</strong> A bring-your-own key lives in <code>~/.phewsh/config.json</code> written at filesystem mode <code>0600</code> (only your user can read it), in a <code>0700</code> directory. A key you set is never written to command history. BYOK requests go <em>directly</em> to the provider — not through phewsh.</p>
+        <p><strong>The local bridge is loopback-only.</strong> <code>phewsh serve</code> binds to <code>127.0.0.1</code> / <code>::1</code> — never a public interface. Every request is checked against a strict origin allowlist (phewsh.com and localhost); anything else gets a <code>403</code>. It runs only while you run it.</p>
+        <p><strong>Telemetry is counts, never content.</strong> Sustainability tracking sends the model name, token <em>counts</em>, and an energy estimate — <strong>never your prompts or the responses</strong>. There is no hidden content collection.</p>
+        <p><strong>Ambient hooks read nothing private.</strong> The Claude Code continuity hook leaves metadata breadcrumbs only (timestamp, project name) and <strong>never reads your transcript</strong>. The brief it injects is built only from your own <code>.intent/</code> files and your own decision record.</p>
+        <p><strong>No lock-in.</strong> <code>.intent/</code> is plain markdown/JSON in your repo. Delete phewsh and it's all still there, readable by any tool.</p>
+        <p style="color:rgba(255,255,255,0.45);font-size:0.78rem;">Found something? Responsible disclosure: <a href="mailto:hello@phewsh.com" style="color:var(--accent)">hello@phewsh.com</a>.</p>
+      </div>
+    </details>
+  </div>
+
+  <!-- ── Next steps ── -->
+  <div style="margin-top:56px; padding:40px 0 0; border-top:1px solid rgba(255,255,255,0.08);">
+    <p style="font-family:'Space Grotesk',monospace; font-size:10px; letter-spacing:0.2em; text-transform:uppercase; color:rgba(255,255,255,0.28); margin-bottom:28px; text-align:center;">Where to go next</p>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:1px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.08);">
+      <a href="/intent" style="display:flex; flex-direction:column; gap:6px; padding:20px 18px; background:#0d0d10; text-decoration:none; color:inherit; transition:background 0.15s;" onmouseover="this.style.background='#141418'" onmouseout="this.style.background='#0d0d10'">
+        <span style="font-size:9px; letter-spacing:0.18em; text-transform:uppercase; color:rgba(0,232,245,0.7); font-family:monospace;">Intent app</span>
+        <span style="font-family:'Space Grotesk',sans-serif; font-size:0.9rem; font-weight:600;">Set your project intent →</span>
+        <span style="font-size:0.75rem; color:rgba(255,255,255,0.38); line-height:1.5;">Create .intent/ artifacts in the browser. Sync to your project.</span>
+      </a>
+      <a href="/api" style="display:flex; flex-direction:column; gap:6px; padding:20px 18px; background:#0d0d10; text-decoration:none; color:inherit; transition:background 0.15s;" onmouseover="this.style.background='#141418'" onmouseout="this.style.background='#0d0d10'">
+        <span style="font-size:9px; letter-spacing:0.18em; text-transform:uppercase; color:rgba(0,232,245,0.7); font-family:monospace;">Gateway API</span>
+        <span style="font-family:'Space Grotesk',sans-serif; font-size:0.9rem; font-weight:600;">Enforce the gate budget →</span>
+        <span style="font-size:0.75rem; color:rgba(255,255,255,0.38); line-height:1.5;">One header makes your budget a hard wall at the inference layer.</span>
+      </a>
+      <a href="/demo" style="display:flex; flex-direction:column; gap:6px; padding:20px 18px; background:#0d0d10; text-decoration:none; color:inherit; transition:background 0.15s;" onmouseover="this.style.background='#141418'" onmouseout="this.style.background='#0d0d10'">
+        <span style="font-size:9px; letter-spacing:0.18em; text-transform:uppercase; color:rgba(0,232,245,0.7); font-family:monospace;">Demo</span>
+        <span style="font-family:'Space Grotesk',sans-serif; font-size:0.9rem; font-weight:600;">See it in 2 minutes →</span>
+        <span style="font-size:0.75rem; color:rgba(255,255,255,0.38); line-height:1.5;">Watch the gate fire a real 402 and context survive the switch.</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-links">
+      <a href="/">phewsh.com</a> · <a href="/intent">Web App</a> · <a href="/demo">Demo</a> · <a href="/api">API / Gateway</a> · <a href="https://github.com/cleverIdeaz/phewsh">GitHub</a> · <a href="https://npmjs.com/package/phewsh">npm</a>
+    </div>
+    <div class="footer-note">Requires Node.js 18+ &middot; Bring your own API key &middot; <a href="/api" style="color:inherit;">Set a budget →</a></div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">Copied to clipboard</div>
+
+  <script>
+    function copy(el, text) {
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = el.querySelector('.copy-btn') || el.querySelector('.cc-copy');
+        const old = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        showToast('Copied: ' + text);
+        setTimeout(() => {
+          btn.textContent = old;
+          btn.classList.remove('copied');
+        }, 1800);
+      });
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2200);
+    }
+  </script>
+
+</body>
+</html>

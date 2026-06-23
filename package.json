@@ -1,0 +1,49 @@
+{
+  "name": "phewsh",
+  "version": "0.15.63",
+  "description": "Turn intent into action. Structure your thinking, execute your next step.",
+  "bin": {
+    "phewsh": "bin/phewsh.js"
+  },
+  "files": [
+    "bin/",
+    "commands/",
+    "lib/",
+    "mcp/",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "intent",
+    "ai",
+    "artifacts",
+    "planning",
+    "execution",
+    "vision",
+    "productivity",
+    "claude",
+    "mcp",
+    "model-context-protocol",
+    "phewsh"
+  ],
+  "author": "Phewsh <hello@phewsh.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cleverIdeaz/phewsh-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cleverIdeaz/phewsh-cli/issues"
+  },
+  "homepage": "https://phewsh.com",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

@@ -1,0 +1,341 @@
+// phewsh clarify
+// Takes raw, messy intent and compiles it into a structured PPS.
+// First run: creates .intent/ + pps.json + .md views.
+// Subsequent runs: updates pps.json fields and regenerates views.
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const readline = require('readline');
+const { readPPS, writePPS, createPPS, generateViews } = require('../lib/pps');
+const configFile = require('../lib/config-file');
+
+const CONFIG_PATH = path.join(os.homedir(), '.phewsh', 'config.json');
+const INTENT_DIR = path.join(process.cwd(), '.intent');
+
+const args = process.argv.slice(3);
+const textFlag = args.indexOf('--text');
+const rawFromFlag = textFlag !== -1 ? args.slice(textFlag + 1).join(' ') : null;
+const isUpdate = args.includes('--update') || args.includes('-u');
+
+function loadConfig() {
+  return configFile.loadConfig(CONFIG_PATH);
+}
+
+function getProjectName() {
+  const existing = readPPS(INTENT_DIR);
+  if (existing?.entity) return existing.entity;
+  const visionPath = path.join(INTENT_DIR, 'vision.md');
+  if (fs.existsSync(visionPath)) {
+    const m = fs.readFileSync(visionPath, 'utf-8').match(/^entity:\s*(.+)$/m);
+    if (m) return m[1].trim();
+  }
+  return path.basename(process.cwd());
+}
+
+async function askForInput() {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    console.log('\n  Describe what you\'re building. Be as messy as you want.\n');
+    console.log('  (You bring the messy idea. PHEWSH compiles it into a clear, structured spec.)\n');
+    process.stdout.write('  > ');
+    let input = '';
+    rl.on('line', (line) => { input += (input ? ' ' : '') + line.trim(); });
+    rl.on('close', () => resolve(input.trim()));
+  });
+}
+
+// The guided walk — the five strongest nodes of the web's 12-node Intent
+// Compass, asked one at a time. The web compass helps the user *see* what
+// they're building; this brings that to the terminal. Not a form: every
+// question is skippable, and the point is to help you think, not interrogate.
+const GUIDE_NODES = [
+  { id: 'purpose', title: 'Purpose', directive: 'the core reason this exists',
+    q: 'What outcome are you really after — and why does this need to exist?' },
+  { id: 'audience', title: 'Audience', directive: 'the people this serves',
+    q: 'Who is this for? Who feels it most when it works?' },
+  { id: 'method', title: 'Method', directive: 'the mechanism and approach',
+    q: 'How does it actually work — the core mechanism or approach?' },
+  { id: 'scope', title: 'Scope', directive: 'boundaries, in and out',
+    q: "What's in — and just as important, what's deliberately out, for now?" },
+  { id: 'differentiation', title: 'Edge', directive: 'what makes this yours',
+    q: 'What would be lost if someone else built this instead of you?' },
+];
+
+function ask(rl, question) {
+  return new Promise((resolve) => rl.question(question, (a) => resolve((a || '').trim())));
+}
+
+// rl is injectable so the walk can be driven deterministically in tests.
+async function askGuided(rl = readline.createInterface({ input: process.stdin, output: process.stdout })) {
+  console.log('\n  Five quick questions to align your own thinking first —');
+  console.log('  a sentence or two each. Blank skips. (esc stops, nothing saved.)\n');
+  const answers = [];
+  for (let i = 0; i < GUIDE_NODES.length; i++) {
+    const n = GUIDE_NODES[i];
+    console.log(`  ${i + 1}/${GUIDE_NODES.length}  ${n.title} — ${n.directive}`);
+    const a = await ask(rl, `  ${n.q}\n  > `);
+    if (a) answers.push({ ...n, answer: a });
+    console.log('');
+  }
+  rl.close();
+  return answers;
+}
+
+// Label each answer by its node so the compiler keeps the structure the walk
+// surfaced (a Purpose answer informs the goal, Scope informs constraints, etc.)
+function assembleRaw(answers) {
+  return answers.map((a) => `${a.title} (${a.directive}): ${a.answer}`).join('\n');
+}
+
+function buildClarifySystemPrompt(existing) {
+  const isRefine = !!(existing?.intent?.goal);
+  return `You are a project compiler. Your job is to extract clean, structured intent from messy human input.
+
+Return ONLY valid JSON — no markdown, no explanation, no commentary. The JSON must match this exact schema:
+
+{
+  "goal": "one sentence north star (what this is and why it exists)",
+  "success_criteria": ["measurable outcome", "measurable outcome"],
+  "constraints": ["constraint or non-negotiable", "..."],
+  "inputs": ["what this takes in or requires"],
+  "outputs": ["what this produces or delivers"],
+  "tasks": [
+    {"text": "first concrete action to take", "type": "do"},
+    {"text": "second action", "type": "do"}
+  ]
+}
+
+Rules:
+- goal: one sentence, no buzzwords, no hedging
+- success_criteria: 2-5 items, must be measurable or observable
+- constraints: real limits only (budget, time, technical, ethical). 0-3 items.
+- inputs: what the project needs to function (data, people, tools). 1-4 items.
+- outputs: what the project delivers. 1-4 items.
+- tasks: 3-7 concrete next actions, specific enough to act on immediately
+- type options: "do" (manual action), "copy" (command to run), "open" (URL to visit), "install" (package to install)
+${isRefine ? '\nThis is a refinement of existing intent. The previous goal was: ' + existing.intent.goal : ''}`;
+}
+
+// Pull the first valid JSON object out of model output — harnesses may wrap it
+// in prose or code fences; the API returns it clean. Throws if none parses.
+function extractJson(text) {
+  const candidates = [];
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) candidates.push(fence[1].trim());
+  const first = text.indexOf('{');
+  const last = text.lastIndexOf('}');
+  if (first !== -1 && last > first) candidates.push(text.slice(first, last + 1));
+  candidates.push(text.trim());
+  for (const c of candidates) {
+    try { return JSON.parse(c); } catch { /* try next candidate */ }
+  }
+  throw new Error('could not parse a project spec from the model output');
+}
+
+async function callClarifyAPI(apiKey, raw, existing) {
+  const systemPrompt = buildClarifySystemPrompt(existing);
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: require('../lib/providers').DEFAULT_ANTHROPIC_MODEL,
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: raw }],
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${response.status}`);
+  }
+
+  const data = await response.json();
+  return extractJson(data.content?.[0]?.text || '');
+}
+
+// No API key? Compile through an installed harness instead — pass-through, so
+// clarify works for anyone with Claude Code / Codex / etc., no key required.
+async function callClarifyViaHarness(harnessId, raw, existing) {
+  const { runViaHarness } = require('../lib/harnesses');
+  const systemPrompt = buildClarifySystemPrompt(existing) +
+    '\n\nReturn ONLY the JSON object — no prose, no code fences, before or after.';
+  const out = await runViaHarness(harnessId, systemPrompt, raw, { quiet: true });
+  return extractJson(out || '');
+}
+
+function writeViews(intentDir, pps) {
+  const { vision, plan, next } = generateViews(pps);
+  fs.writeFileSync(path.join(intentDir, 'vision.md'), vision);
+  fs.writeFileSync(path.join(intentDir, 'plan.md'), plan);
+  fs.writeFileSync(path.join(intentDir, 'next.md'), next);
+}
+
+async function main() {
+  // ESC backs out cleanly at any point — nothing half-written, no error.
+  if (process.stdin.isTTY) {
+    readline.emitKeypressEvents(process.stdin);
+    process.stdin.on('keypress', (str, key) => {
+      if (key && key.name === 'escape') {
+        console.log('\n\n  stopped — esc. Nothing changed.\n');
+        process.exit(0);
+      }
+    });
+  }
+
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(`
+  😮‍💨🤫  phewsh clarify
+
+  Usage:
+    phewsh clarify                    Guided: a 5-question walk that aligns your thinking, then compiles
+    phewsh clarify --freeform         Free-form: describe it all in one messy blob
+    phewsh clarify --text "..."       Inline: pass raw text directly
+    phewsh clarify --update           Refine existing PPS with new input
+
+  What it does:
+    Walks you through the five strongest nodes of the Intent Compass —
+    Purpose, Audience, Method, Scope, Edge — one question at a time, so the
+    terminal helps you *think*, not just compile. Then turns your answers
+    into a structured project spec (PPS):
+    Writes .intent/pps.json as the source of truth.
+    Generates vision.md, plan.md, next.md as human-readable views.
+
+  Requires:
+    An installed agent CLI (Claude Code, Codex, Gemini…) — phewsh uses its
+    login, no key. Or run "phewsh login --set-key" to use an Anthropic API key.
+
+  Examples:
+    phewsh clarify
+    phewsh clarify --text "I want to build a thing that helps people track habits with AI"
+    phewsh clarify --update           After new context or direction change
+    `);
+    return;
+  }
+
+  const config = loadConfig();
+  // Pass-through: with no API key, compile through an installed harness
+  // (Claude Code, Codex, …) — the same login the rest of phewsh rides on.
+  const harnessId = config?.apiKey ? null : require('../lib/harnesses').detectInstalled();
+  if (!config?.apiKey && !harnessId) {
+    console.log('\n  Nothing to compile with yet. Either:');
+    console.log('    • install an agent CLI (Claude Code, Codex, Gemini…) — phewsh uses its login, or');
+    console.log('    • run `phewsh login --set-key` to add an API key.\n');
+    process.exit(1);
+  }
+
+  const existing = readPPS(INTENT_DIR);
+  if (existing && !isUpdate) {
+    console.log('\n  .intent/pps.json already exists.');
+    console.log('  Run `phewsh clarify --update` to refine, or `phewsh intent --status` to view.\n');
+    return;
+  }
+
+  console.log('\n  😮‍💨🤫  phewsh clarify\n');
+
+  const freeform = args.includes('--freeform') || args.includes('-f');
+  let raw = rawFromFlag;
+  if (!raw) {
+    if (!process.stdin.isTTY) {
+      console.error('\n  Pipe input or use --text "your description"\n');
+      process.exit(1);
+    }
+    if (freeform) {
+      raw = await askForInput();
+    } else {
+      // Guided is the default interactive path: help the user think first.
+      const answers = await askGuided();
+      raw = assembleRaw(answers);
+      if (!raw) {
+        // Skipped every question — fall back to a single free-form description.
+        console.log('  No problem — describe it your own way instead.');
+        raw = await askForInput();
+      }
+    }
+  }
+
+  if (!raw) {
+    console.log('\n  Nothing to clarify.\n');
+    return;
+  }
+
+  const { HARNESSES } = require('../lib/harnesses');
+  const via = harnessId ? ` via ${HARNESSES[harnessId]?.label || harnessId}` : '';
+  console.log(`\n  Compiling your intent into a spec${via}...\n`);
+
+  let extracted;
+  try {
+    extracted = harnessId
+      ? await callClarifyViaHarness(harnessId, raw, existing)
+      : await callClarifyAPI(config.apiKey, raw, existing);
+  } catch (err) {
+    console.error('\n  Clarify failed:', err.message, '\n');
+    process.exit(1);
+  }
+
+  const entity = getProjectName();
+  let pps;
+
+  if (existing && isUpdate) {
+    // Patch existing PPS with new intent fields, preserve id/created/tasks state
+    pps = {
+      ...existing,
+      intent: {
+        raw,
+        goal: extracted.goal,
+        success_criteria: extracted.success_criteria || [],
+        constraints: extracted.constraints || [],
+        inputs: extracted.inputs || [],
+        outputs: extracted.outputs || [],
+      },
+    };
+    // Merge new tasks (preserve done tasks, add new ones)
+    const doneTasks = existing.tasks.filter(t => t.status === 'done');
+    const newTasks = (extracted.tasks || []).map((t, i) => ({
+      id: `t_${String(Date.now() + i).slice(-6)}`,
+      text: t.text,
+      status: 'open',
+      type: t.type || 'do',
+      blocked_by: null,
+    }));
+    pps.tasks = [...doneTasks, ...newTasks];
+    pps.state.phase = 'plan';
+  } else {
+    pps = createPPS({ entity, raw, intent: extracted });
+    pps.state.phase = 'plan';
+  }
+
+  fs.mkdirSync(INTENT_DIR, { recursive: true });
+  writePPS(INTENT_DIR, pps);
+  writeViews(INTENT_DIR, pps);
+
+  console.log(`  ✓ .intent/pps.json       — structured project spec`);
+  console.log(`  ✓ .intent/vision.md      — ${pps.intent.goal}`);
+  console.log(`  ✓ .intent/plan.md        — ${pps.intent.success_criteria.length} outcomes, ${pps.intent.constraints.length} constraints`);
+  console.log(`  ✓ .intent/next.md        — ${pps.tasks.length} actions\n`);
+  console.log(`  Goal: ${pps.intent.goal}\n`);
+  if (pps.tasks.length > 0) {
+    console.log('  First actions:');
+    pps.tasks.slice(0, 3).forEach(t => console.log(`    ·  ${t.text}`));
+  }
+  console.log(`
+  Next:
+    phewsh intent --status     Review your artifacts
+    phewsh clarify --update    Refine with more context
+    phewsh ai run "..."        Run AI with this context
+  `);
+}
+
+if (require.main === module) {
+  main().catch(err => {
+    console.error('\n  Error:', err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { run: main, GUIDE_NODES, assembleRaw, askGuided, extractJson };
