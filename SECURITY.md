@@ -7,9 +7,10 @@ what it reads, writes, and sends. No vague claims; if something here is wrong,
 it's a bug: **hello@phewsh.com**.
 
 > Status: this is an honest self-documented inventory, **not** an independent
-> audit. An external review and a public source repository are planned (see
-> "Roadmap"). Until then, inspect the source you install: `npm view phewsh`,
-> then read `bin/ commands/ lib/ mcp/`.
+> audit. The CLI source is **public and MIT-licensed** at
+> **github.com/cleverIdeaz/phewsh-cli** — an exact mirror of the published npm
+> package, so you can read exactly what you install (`bin/ commands/ lib/ mcp/`).
+> An independent review is still planned (see "Roadmap").
 
 ## What phewsh reads
 - **`.intent/`** in your project (`vision.md`, `plan.md`, `status.md`, `next.md`,
@@ -83,12 +84,13 @@ and runs only while you run it.
   outside them is yours and untouched.
 
 ## Roadmap to verifiable trust
-Immediate (this/next pass): this doc, exec hardening, telemetry stays counts-only
-and explicit. Before broad promotion: public CLI source repo with a reproducible
-npm artifact, npm provenance, signed tags, `SECURITY.md` disclosure process,
-dependency/secret scanning. For enterprise: a documented threat model and an
-independent security assessment. We will not call phewsh "audited" until an
-independent audit has actually occurred.
+Done: this doc, exec hardening, telemetry stays counts-only and explicit, and a
+**public MIT source repo** (`cleverIdeaz/phewsh-cli`) mirroring the npm package.
+Before broad promotion: npm provenance, signed tags, and dependency/secret
+scanning so the published artifact is cryptographically verifiable from the
+public source. For enterprise: a documented threat model and an independent
+security assessment. We will not call phewsh "audited" until an independent
+audit has actually occurred.
 
 ## Reporting
 Security issues: **hello@phewsh.com**. Please allow reasonable time to remediate

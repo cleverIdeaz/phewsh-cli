@@ -5,8 +5,23 @@ Turn intent into action. Structure your thinking, execute your next step.
 ## Install
 
 ```bash
-npm install -g phewsh
+curl -fsSL https://phewsh.com/install.sh | sh
 ```
+
+No sudo, nvm-aware. (Prefer a package manager? `npm install -g phewsh` —
+same artifact, built from this repo.)
+
+Then let it improve the AI tools you already have — without launching anything:
+
+```bash
+phewsh ambient on    # your .intent/ + a verified brief reach Claude Code, Codex,
+                     # Gemini, Cursor at the start of every session (reversible)
+```
+
+phewsh isn't just a CLI — `ambient` makes every supported tool start aligned to
+what you're building. What it reads, writes, and sends is documented, factually,
+in [SECURITY.md](./SECURITY.md). It's local-first and MIT; this repo is an exact
+mirror of the published npm package.
 
 ## Quick Start
 
