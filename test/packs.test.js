@@ -32,10 +32,23 @@ test('vendored pack installs a marked block, preserves user content, removes cle
   fs.rmSync(d, { recursive: true, force: true });
 });
 
-test('linked packs (gsd) are not vendored', () => {
+test('linked packs are not vendored', () => {
   const d = tmp();
-  const { written } = packs.install('gsd', d);
-  assert.equal(written.length, 0, 'linked pack writes nothing');
-  assert.equal(packs.isInstalled('gsd', d), false);
+  const linked = Object.entries(packs.PACKS)
+    .filter(([, p]) => p.kind === 'linked')
+    .map(([name]) => name);
+
+  assert.ok(linked.includes('gsd'));
+  assert.ok(linked.includes('loop-library'));
+  assert.ok(linked.includes('unlimited-ocr'));
+  assert.ok(linked.includes('skillspector'));
+
+  for (const name of linked) {
+    const { written } = packs.install(name, d);
+    assert.equal(written.length, 0, `${name} writes nothing`);
+    assert.equal(packs.isInstalled(name, d), false, `${name} is never marked installed locally`);
+    assert.equal(packs.previewInstall(name, d), null, `${name} has no vendored preview`);
+  }
+
   fs.rmSync(d, { recursive: true, force: true });
 });

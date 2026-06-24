@@ -52,7 +52,7 @@ async function install(name) {
   console.log('');
 
   if (p.kind === 'linked') {
-    console.log(`  ${sage('This is a separate tool — phewsh doesn\'t vendor it. Install it with:')}`);
+    console.log(`  ${sage('This is a separate tool — phewsh doesn\'t vendor it. Start here:')}`);
     console.log(`    ${cream(p.install)}`);
     console.log('');
     return;
