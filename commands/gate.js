@@ -373,6 +373,7 @@ async function main() {
   if (subcommand === 'update' || subcommand === 'edit') { await update(); return; }
   if (subcommand === 'pause') { pause(); return; }
   if (subcommand === 'resume') { resume(); return; }
+  if (subcommand === 'enforce') { enforce(args[1]); return; }
   if (subcommand === 'reset') {
     let removed = false;
     const project = loadProjectJson();
@@ -389,6 +390,34 @@ async function main() {
     return;
   }
   console.log(`\n  Unknown: ${subcommand}. Run \`phewsh gate --help\`.\n`);
+}
+
+// Opt-in deterministic enforcement: register/unregister the Claude Code
+// PreToolUse hook that makes the Decision Gate act BEFORE a tool runs. Reversible,
+// Claude-Code-only for now (it's the one provider with a real veto hook).
+function enforce(action) {
+  let amb;
+  try { amb = require('./ambient'); } catch { console.log('\n  Enforcement unavailable.\n'); return; }
+  const on = (action || 'status').toLowerCase();
+  if (on === 'on' || on === 'enable') {
+    const changed = amb.enablePreToolGate();
+    console.log(changed
+      ? `\n  ${green('●')} Gate enforcement ${green('ON')} — Claude Code asks/denies on protected-path writes and high-blast-radius commands before they run.\n  ${g('Reversible:')} phewsh gate enforce off\n`
+      : `\n  Gate enforcement already on.\n`);
+    return;
+  }
+  if (on === 'off' || on === 'disable') {
+    const changed = amb.disablePreToolGate();
+    console.log(changed ? `\n  Gate enforcement ${yellow('OFF')} — PreToolUse hook removed.\n` : `\n  Gate enforcement was not on.\n`);
+    return;
+  }
+  // status
+  const applied = amb.preToolGateApplied();
+  console.log(`\n  Gate enforcement: ${applied ? green('ON') : g('off')} ${g('(Claude Code PreToolUse)')}`);
+  console.log(`  ${g('Turn on:')} phewsh gate enforce on   ${g('· off:')} phewsh gate enforce off`);
+  console.log(`  ${g('What it does: deny writes to protected paths (.env, keys, .git/…),')}`);
+  console.log(`  ${g('ask before high-blast-radius shell (rm -rf, force-push, sudo…).')}`);
+  console.log(`  ${g('Opt-in, local-only, fail-open. Other tools: advisory only for now.')}\n`);
 }
 
 module.exports = main;

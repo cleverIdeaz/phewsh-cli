@@ -163,10 +163,63 @@ function sessionEnd() {
   setTimeout(() => { appendBreadcrumb('session-end'); process.exit(0); }, 1500);
 }
 
+// Load the Decision Gate context (constraints + protected files) for the project
+// being worked in. Best-effort: missing/garbled → empty context (gate allows).
+function loadGateContext(cwd) {
+  try {
+    const pj = JSON.parse(fs.readFileSync(path.join(cwd, '.intent', 'project.json'), 'utf-8'));
+    const dg = pj.decisionGate || {};
+    return {
+      constraints: dg.constraints || {},
+      protectedFiles: dg.protectedFiles || pj.protectedFiles || [],
+    };
+  } catch { return { constraints: {}, protectedFiles: [] }; }
+}
+
+// PreToolUse adapter — the Decision Gate acting BEFORE a tool runs. Reads Claude
+// Code's PreToolUse JSON from stdin, evaluates against the project's constraints
+// + protected files, and emits a permission decision. FAIL-SAFE: any error, no
+// stdin, or no policy hit → exit 0 (allow). A broken gate must never trap you.
+// It logs only a redacted decision line (never the tool payload).
+function preTool() {
+  try {
+    if (process.stdin.isTTY) process.exit(0); // not a real hook invocation
+    const { evaluateAction, auditLine } = require('../lib/gate-policy');
+    let raw = '';
+    try { raw = fs.readFileSync(0, 'utf-8'); } catch { process.exit(0); }
+    let payload = {};
+    try { payload = JSON.parse(raw || '{}'); } catch { process.exit(0); }
+
+    const cwd = payload.cwd || process.cwd();
+    const envelope = {
+      toolName: payload.tool_name || payload.toolName,
+      toolInput: payload.tool_input || payload.toolInput || {},
+      ...loadGateContext(cwd),
+    };
+    let result = { decision: 'allow', reason: '' };
+    try { result = evaluateAction(envelope); } catch { process.exit(0); }
+
+    if (result.decision !== 'allow') {
+      try { appendBreadcrumb('pre-tool', { decision: result.decision, action: auditLine(envelope, result) }); } catch { /* audit is best-effort */ }
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: result.decision, // 'deny' | 'ask'
+          permissionDecisionReason: result.reason,
+        },
+      }));
+    }
+    process.exit(0);
+  } catch {
+    process.exit(0); // fail open, always
+  }
+}
+
 function main() {
   const event = process.argv[3];
   if (event === 'session-start') return sessionStart();
   if (event === 'session-end') return sessionEnd();
+  if (event === 'pre-tool') return preTool();
   // Unknown event: exit silently — hooks must never error the host tool.
   process.exit(0);
 }

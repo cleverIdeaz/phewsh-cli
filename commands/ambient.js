@@ -27,6 +27,11 @@ const CLAUDE_SETTINGS = path.join(os.homedir(), '.claude', 'settings.json');
 
 const HOOK_START = { type: 'command', command: 'phewsh hook session-start' };
 const HOOK_END = { type: 'command', command: 'phewsh hook session-end' };
+// Opt-in Decision Gate enforcement (separate from ambient context sync). The
+// matcher scopes the hook to the tools the policy actually judges, so it never
+// fires on harmless reads.
+const HOOK_PRETOOL = { type: 'command', command: 'phewsh hook pre-tool' };
+const PRETOOL_MATCHER = 'Write|Edit|MultiEdit|NotebookEdit|Bash';
 
 // ANSI helpers (256-color per cli/lib/ui.js palette rules)
 const b = (s) => `\x1b[1m${s}\x1b[0m`;
@@ -95,6 +100,35 @@ function removeClaudeHooks() {
   }
   if (removed.length > 0) fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
   return removed;
+}
+
+// ── Decision Gate enforcement (PreToolUse) — opt-in, reversible ──────────────
+function preToolGateApplied() {
+  const s = loadClaudeSettings();
+  return !!s && hasHook(s, 'PreToolUse', HOOK_PRETOOL.command);
+}
+
+function enablePreToolGate() {
+  const settings = loadClaudeSettings() || {};
+  settings.hooks = settings.hooks || {};
+  settings.hooks.PreToolUse = settings.hooks.PreToolUse || [];
+  if (hasHook(settings, 'PreToolUse', HOOK_PRETOOL.command)) return false;
+  settings.hooks.PreToolUse.push({ matcher: PRETOOL_MATCHER, hooks: [HOOK_PRETOOL] });
+  fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
+  return true;
+}
+
+function disablePreToolGate() {
+  const settings = loadClaudeSettings();
+  if (!settings?.hooks?.PreToolUse) return false;
+  const before = settings.hooks.PreToolUse.length;
+  settings.hooks.PreToolUse = settings.hooks.PreToolUse
+    .map(e => ({ ...e, hooks: (e.hooks || []).filter(h => h.command !== HOOK_PRETOOL.command) }))
+    .filter(e => e.hooks.length > 0);
+  if ((settings.hooks.PreToolUse || []).length === 0) delete settings.hooks.PreToolUse;
+  const changed = before !== (settings.hooks.PreToolUse?.length ?? 0);
+  if (changed) fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
+  return changed;
 }
 
 function showConsentScreen(harnesses) {
@@ -365,3 +399,6 @@ async function main() {
 
 module.exports = main;
 module.exports.ensureAuto = ensureAuto;
+module.exports.enablePreToolGate = enablePreToolGate;
+module.exports.disablePreToolGate = disablePreToolGate;
+module.exports.preToolGateApplied = preToolGateApplied;
