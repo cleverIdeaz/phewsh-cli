@@ -142,6 +142,33 @@ async function listTasks(config) {
   console.log(`\n  ${g('Claim one:')} ${w('phewsh task claim <id>')}\n`);
 }
 
+async function inviteTeammate(config, email) {
+  if (!email || !email.includes('@')) throw new Error('Usage: phewsh task invite <email>');
+  const project = await loadProject(config);
+  if (project.user_id !== config.supabaseUserId) throw new Error('Only the project owner can invite (Phase 2).');
+  await supa.insert('project_invites', {
+    project_id: project.id, email, invited_by: config.supabaseUserId,
+  }, config.supabaseAccessToken);
+  console.log(`\n  ${green('✓')} Invited ${w(email)} to ${w(project.name)}`);
+  console.log(`  ${g('They join with')} ${w('phewsh task join')} ${g('(CLI) or the Join banner on phewsh.com/intent/dashboard')}\n`);
+}
+
+async function joinProjects(config) {
+  // RLS also shows an owner their own outbound invites — only accept ours.
+  const invites = (await supa.select('project_invites',
+    'accepted_at=is.null&select=id,project_id,email,created_at', config.supabaseAccessToken))
+    .filter((inv) => inv.email?.toLowerCase() === (config.email || '').toLowerCase());
+  if (!invites.length) {
+    console.log(`\n  ${g('No pending invites for your account.')}\n`);
+    return;
+  }
+  for (const inv of invites) {
+    await supa.rpc('accept_project_invite', { invite_id: inv.id }, config.supabaseAccessToken);
+    console.log(`\n  ${green('✓')} Joined project ${w(inv.project_id)}`);
+  }
+  console.log(`  ${g('See its tasks from the project repo:')} ${w('phewsh task')}\n`);
+}
+
 async function newTask(config, title) {
   if (!title) throw new Error('Usage: phewsh task new "<title>"');
   const project = await loadProject(config);
@@ -251,7 +278,9 @@ module.exports = async function run() {
     if (sub === 'list') return await listTasks(config);
     if (sub === 'new') return await newTask(config, rest.join(' ').trim());
     if (sub === 'claim') return await claimTask(config, rest[0], via);
-    console.log(`\n  Usage: phewsh task [list | new "<title>" | claim <id> [--via <harness>]]\n`);
+    if (sub === 'invite') return await inviteTeammate(config, rest[0]);
+    if (sub === 'join') return await joinProjects(config);
+    console.log(`\n  Usage: phewsh task [list | new "<title>" | claim <id> [--via <harness>] | invite <email> | join]\n`);
   } catch (err) {
     console.error(`\n  ${red('✗')} ${err.message}\n`);
     process.exitCode = 1;
