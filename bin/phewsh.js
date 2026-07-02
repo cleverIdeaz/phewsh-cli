@@ -77,6 +77,9 @@ function showBrand() {
 const COMMANDS = {
   session: () => require('../commands/session'),
   intent:  () => require('../commands/intent'),
+  // `phewsh init` = `phewsh intent --init` — the universal spelling (git init,
+  // npm init) and what phewsh.com/cli tells new users to run.
+  init:    () => { process.argv.splice(3, 0, '--init'); return require('../commands/intent'); },
   clarify: () => require('../commands/clarify').run(),
   push:    () => require('../commands/push'),
   pull:    () => require('../commands/pull'),
