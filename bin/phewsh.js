@@ -111,6 +111,7 @@ const COMMANDS = {
   next:    () => require('../commands/next')(),
   work:    () => require('../commands/work')(),
   remember: () => require('../commands/remember')(),
+  task:    () => require('../commands/task')(),
   pack:    () => require('../commands/pack')(),
   hook:    () => require('../commands/hook')(),
   welcome: () => require('../commands/welcome')(),
@@ -161,7 +162,8 @@ function showHelp() {
   console.log(`    ${cyan('ambient')}    ${g('Continuity without launching phewsh — enhance your other tools')}`);
   console.log(`    ${cyan('shim')}       ${g('Guaranteed launch banner — phewsh prints status before each tool')}`);
   console.log(`    ${cyan('pack')}       ${g('Opt-in workflow packs (Karpathy guidelines, GSD…) — attributed, reversible')}`);
-  console.log(`    ${cyan('receipts')}   ${g('Proof trail — what agents actually did, with evidence')}`);
+  console.log(`    ${cyan('task')}       ${g('Shared tasks — request, claim, and ship teammate work via branch + PR')}
+    ${cyan('receipts')}   ${g('Proof trail — what agents actually did, with evidence')}`);
   console.log(`    ${cyan('remember')}   ${g('Jot a decision to .intent/decisions.md — every tool inherits it')}`);
   console.log(`    ${cyan('outcomes')}   ${g('Decision record — what was kept, reverted, or failed')}`);
   console.log(`    ${cyan('bypass')}     ${g('Went around phewsh? Record why — 10 seconds, no guilt')}`);
