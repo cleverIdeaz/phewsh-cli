@@ -193,7 +193,13 @@ async function claimTask(config, idArg, viaFlag) {
     throw new Error('`gh` is not installed or not authenticated — needed to open the PR. Run `gh auth login`.');
   }
 
-  // Resolve a short id prefix to the full task id.
+  // `claim next` = the oldest open task; otherwise resolve a short id prefix.
+  if (idArg === 'next') {
+    const open = await supa.select('tasks',
+      `project_id=eq.${project.id}&status=eq.open&select=id&order=created_at.asc&limit=1`, config.supabaseAccessToken);
+    if (!open.length) throw new Error('No open tasks to claim.');
+    idArg = open[0].id;
+  }
   const candidates = await supa.select('tasks',
     `project_id=eq.${project.id}&id=like.${idArg}*&select=*`, config.supabaseAccessToken)
     .catch(() => []);
@@ -266,8 +272,18 @@ async function claimTask(config, idArg, viaFlag) {
   console.log(`  ${g('Clean up later:')} ${w(`git worktree remove ${worktree}`)}\n`);
 }
 
+// `phewsh dispatch` is the friendly verb over the same machinery — no second
+// architecture. Bare = list; an id prefix = claim; anything else = new task.
+function dispatchToTaskArgs(args) {
+  const positional = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--')));
+  if (!positional.length) return ['list'];
+  if (positional.length === 1 && (positional[0] === 'next' || /^[0-9a-f-]{6,36}$/i.test(positional[0]))) return ['claim', ...args];
+  return ['new', ...args];
+}
+
 module.exports = async function run() {
-  const args = process.argv.slice(3);
+  let args = process.argv.slice(3);
+  if (process.argv[2] === 'dispatch') args = dispatchToTaskArgs(args);
   const sub = args[0] || 'list';
   const viaIdx = args.indexOf('--via');
   const via = viaIdx !== -1 ? args[viaIdx + 1] : null;
@@ -280,9 +296,11 @@ module.exports = async function run() {
     if (sub === 'claim') return await claimTask(config, rest[0], via);
     if (sub === 'invite') return await inviteTeammate(config, rest[0]);
     if (sub === 'join') return await joinProjects(config);
-    console.log(`\n  Usage: phewsh task [list | new "<title>" | claim <id> [--via <harness>] | invite <email> | join]\n`);
+    console.log(`\n  Usage: phewsh task [list | new "<title>" | claim <id> [--via <harness>] | invite <email> | join]\n         phewsh dispatch ["<title>" | <id> | next] [--via <harness>]\n`);
   } catch (err) {
     console.error(`\n  ${red('✗')} ${err.message}\n`);
     process.exitCode = 1;
   }
 };
+
+module.exports.dispatchToTaskArgs = dispatchToTaskArgs;

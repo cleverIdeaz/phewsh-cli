@@ -112,6 +112,7 @@ const COMMANDS = {
   work:    () => require('../commands/work')(),
   remember: () => require('../commands/remember')(),
   task:    () => require('../commands/task')(),
+  dispatch: () => require('../commands/task')(),
   pack:    () => require('../commands/pack')(),
   hook:    () => require('../commands/hook')(),
   welcome: () => require('../commands/welcome')(),
@@ -163,6 +164,7 @@ function showHelp() {
   console.log(`    ${cyan('shim')}       ${g('Guaranteed launch banner — phewsh prints status before each tool')}`);
   console.log(`    ${cyan('pack')}       ${g('Opt-in workflow packs (Karpathy guidelines, GSD…) — attributed, reversible')}`);
   console.log(`    ${cyan('task')}       ${g('Shared tasks — request, claim, and ship teammate work via branch + PR')}
+    ${cyan('dispatch')}   ${g('Friendly verb over task: dispatch "<title>" to request, <id>|next to claim')}
     ${cyan('receipts')}   ${g('Proof trail — what agents actually did, with evidence')}`);
   console.log(`    ${cyan('remember')}   ${g('Jot a decision to .intent/decisions.md — every tool inherits it')}`);
   console.log(`    ${cyan('outcomes')}   ${g('Decision record — what was kept, reverted, or failed')}`);

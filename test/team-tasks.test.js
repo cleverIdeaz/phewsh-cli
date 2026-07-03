@@ -45,3 +45,12 @@ test('proposedOutcome is provisional and carries provenance', () => {
   assert.deepEqual(o.verification, ['tests pass']);
   assert.ok(o.note.includes('merge'), 'must explain it becomes authoritative only on merge');
 });
+
+test('dispatch maps to task verbs without a second architecture', () => {
+  const { dispatchToTaskArgs } = require('../commands/task');
+  assert.deepEqual(dispatchToTaskArgs([]), ['list']);
+  assert.deepEqual(dispatchToTaskArgs(['a1b2c3d4']), ['claim', 'a1b2c3d4']);
+  assert.deepEqual(dispatchToTaskArgs(['next', '--via', 'codex']), ['claim', 'next', '--via', 'codex']);
+  assert.deepEqual(dispatchToTaskArgs(['fix the login flow']), ['new', 'fix the login flow']);
+  assert.deepEqual(dispatchToTaskArgs(['write', 'homepage', 'copy']), ['new', 'write', 'homepage', 'copy']);
+});
