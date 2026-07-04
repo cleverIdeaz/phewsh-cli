@@ -123,11 +123,41 @@ function runnerArgs(harnessId, prompt) {
   return HARNESSES[harnessId].args(prompt);
 }
 
+async function memberNames(config, projectId) {
+  try {
+    const rows = await supa.rpc('project_member_names', { pid: projectId }, config.supabaseAccessToken);
+    const m = {};
+    for (const r of rows || []) m[r.user_id] = r.display_name;
+    return m;
+  } catch { return {}; }
+}
+
+// Close the loop from verified GitHub state: any listed task whose PR has
+// actually merged gets recorded as merged (best-effort, never blocks the list).
+function syncMergedFromGitHub(config, rows) {
+  const candidates = rows.filter((t) => ['pr_open', 'approved'].includes(t.status) && t.pull_request_url);
+  const updated = [];
+  for (const t of candidates) {
+    try {
+      const out = execFileSync('gh', ['pr', 'view', t.pull_request_url, '--json', 'state'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
+      if (JSON.parse(out).state === 'MERGED') updated.push(t);
+    } catch { /* gh missing or PR unreachable — leave as-is */ }
+  }
+  return Promise.all(updated.map((t) =>
+    supa.rpc('mark_merged', { p_task_id: t.id, p_metadata: { via: 'gh pr view' } }, config.supabaseAccessToken)
+      .then(() => { t.status = 'merged'; })
+      .catch(() => {})
+  ));
+}
+
 async function listTasks(config) {
   const project = await loadProject(config);
   const rows = await supa.select('tasks',
-    `project_id=eq.${project.id}&select=id,title,status,claimed_by,pull_request_url,created_at&order=created_at.desc&limit=20`,
+    `project_id=eq.${project.id}&select=id,title,status,claimed_by,assigned_to,suggested_harness,pull_request_url,created_at&order=created_at.desc&limit=20`,
     config.supabaseAccessToken);
+  await syncMergedFromGitHub(config, rows);
+  const names = await memberNames(config, project.id);
+  const nameOf = (id) => id === config.supabaseUserId ? 'you' : (names[id] || 'a teammate');
   console.log(`\n  ${b(w(project.name))} ${g('— shared tasks')}\n`);
   if (!rows.length) {
     console.log(`  ${g('No tasks yet.')} ${w('phewsh task new "<title>"')} ${g('to request one.')}\n`);
@@ -135,11 +165,38 @@ async function listTasks(config) {
   }
   for (const t of rows) {
     const color = STATUS_COLOR[t.status] || w;
-    const mine = t.claimed_by === config.supabaseUserId ? g(' · claimed by you') : '';
-    console.log(`  ${color('●')} ${w(t.title)}  ${g(t.id.slice(0, 8))} ${color(t.status)}${mine}`);
+    const bits = [];
+    if (t.claimed_by) bits.push(`claimed by ${nameOf(t.claimed_by)}`);
+    else if (t.assigned_to) bits.push(`assigned to ${nameOf(t.assigned_to)}`);
+    if (t.suggested_harness && !t.claimed_by) bits.push(`suggests ${HARNESSES[t.suggested_harness]?.label || t.suggested_harness}`);
+    console.log(`  ${color('●')} ${w(t.title)}  ${g(t.id.slice(0, 8))} ${color(t.status)}${bits.length ? g(' · ' + bits.join(' · ')) : ''}`);
     if (t.pull_request_url) console.log(`      ${cyan(t.pull_request_url)}`);
+    if (t.status === 'merged') console.log(`      ${g('merged — record it:')} ${w(`phewsh task reconcile ${t.id.slice(0, 8)}`)}`);
   }
   console.log(`\n  ${g('Claim one:')} ${w('phewsh task claim <id>')}\n`);
+}
+
+// Promote a merged task into the repo's durable Record (.intent/decisions.md)
+// and mark it reconciled — the last beat of the loop.
+async function reconcileTask(config, idArg) {
+  if (!idArg) throw new Error('Usage: phewsh task reconcile <task-id>');
+  const project = await loadProject(config);
+  const rows = await supa.select('tasks', `project_id=eq.${project.id}&id=like.${idArg}*&select=*`, config.supabaseAccessToken);
+  const task = rows[0];
+  if (!task) throw new Error(`Task ${idArg} not found in this project.`);
+  if (task.status !== 'merged') {
+    await syncMergedFromGitHub(config, [task]);
+    if (task.status !== 'merged') throw new Error(`Task is ${task.status} — only merged tasks can be reconciled.`);
+  }
+  const names = await memberNames(config, project.id);
+  const nameOf = (id) => names[id] || 'a teammate';
+  const decisionsPath = path.join(process.cwd(), '.intent', 'decisions.md');
+  const line = `- ${new Date().toISOString().slice(0, 10)} — Shared task "${task.title}" (${task.id.slice(0, 8)}) merged and recorded: requested by ${nameOf(task.created_by)}, executed by ${nameOf(task.claimed_by)}, reviewed on GitHub. PR: ${task.pull_request_url || 'n/a'}\n`;
+  if (fs.existsSync(decisionsPath)) fs.appendFileSync(decisionsPath, line);
+  else console.log(`  ${g('(no .intent/decisions.md here — recording in the cloud only)')}`);
+  await supa.rpc('mark_reconciled', { p_task_id: task.id }, config.supabaseAccessToken);
+  console.log(`\n  ${green('✓')} Recorded into project truth: ${w(task.title)}`);
+  if (fs.existsSync(decisionsPath)) console.log(`  ${g('Appended to .intent/decisions.md — commit it with your normal flow.')}\n`);
 }
 
 async function inviteTeammate(config, email) {
@@ -296,6 +353,7 @@ module.exports = async function run() {
     if (sub === 'claim') return await claimTask(config, rest[0], via);
     if (sub === 'invite') return await inviteTeammate(config, rest[0]);
     if (sub === 'join') return await joinProjects(config);
+    if (sub === 'reconcile') return await reconcileTask(config, rest[0]);
     console.log(`\n  Usage: phewsh task [list | new "<title>" | claim <id> [--via <harness>] | invite <email> | join]\n         phewsh dispatch ["<title>" | <id> | next] [--via <harness>]\n`);
   } catch (err) {
     console.error(`\n  ${red('✗')} ${err.message}\n`);

@@ -1,6 +1,6 @@
 {
   "name": "phewsh",
-  "version": "0.15.70",
+  "version": "0.15.71",
   "description": "Turn intent into action. Structure your thinking, execute your next step.",
   "bin": {
     "phewsh": "bin/phewsh.js"
