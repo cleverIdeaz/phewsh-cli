@@ -224,7 +224,8 @@
       transition: border-color 0.2s;
     }
     .card .card-code:hover { border-color: rgba(100,215,195,0.25); }
-    .card .card-code .cc-text { color: var(--text); }
+    .card .card-code > span { min-width: 0; }
+    .card .card-code .cc-text { color: var(--text); overflow-wrap: anywhere; }
     .card .card-code .cc-prompt { color: var(--green); margin-right: 4px; }
     .card .card-code .cc-copy {
       color: var(--text-dim);
@@ -635,13 +636,17 @@
         <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,0.4);">source: <a href="https://github.com/gsd-build/get-shit-done" style="color:rgba(0,232,245,0.7);">github.com/gsd-build/get-shit-done</a></p>
       </div>
       <div class="card">
-        <h3>loop-library <span style="font-family:monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;">linked</span></h3>
-        <p class="card-desc">Forward Future's copy-ready agent loops, with explicit checks and stopping conditions. Useful Work-layer inspiration; phewsh links to it without becoming a scheduler.</p>
+        <h3>loop-library / loopy <span style="font-family:monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;">linked</span></h3>
+        <p class="card-desc">Forward Future's practical agent loops and Loopy skill, with explicit checks and stopping conditions. Useful Work-layer inspiration; phewsh links to it without becoming a scheduler.</p>
         <div class="card-code" onclick="copy(this, 'phewsh pack install loop-library'); event.stopPropagation();">
           <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install loop-library</span></span>
           <span class="cc-copy">Copy</span>
         </div>
-        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,0.4);">source: <a href="https://github.com/Forward-Future/loop-library" style="color:rgba(0,232,245,0.7);">github.com/Forward-Future/loop-library</a></p>
+        <div class="card-code" onclick="copy(this, 'npx skills add Forward-Future/loop-library --skill loopy -g'); event.stopPropagation();" style="margin-top:8px;">
+          <span><span class="cc-prompt">$</span><span class="cc-text">npx skills add Forward-Future/loop-library --skill loopy -g</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,0.4);">source: <a href="https://signals.forwardfuture.com/loop-library/" style="color:rgba(0,232,245,0.7);">signals.forwardfuture.com/loop-library</a> · <a href="https://github.com/Forward-Future/loop-library" style="color:rgba(0,232,245,0.7);">GitHub</a></p>
       </div>
       <div class="card">
         <h3>matt-skills <span style="font-family:monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;">linked</span></h3>

@@ -25,3 +25,18 @@ test('`phewsh init` creates .intent/ like `intent --init`', () => {
 
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('intent.js parses flags when invoked directly (the /init help-screen bug)', () => {
+  // The session once spawned `node intent.js --init` — flags landed at argv[2],
+  // slice(3) missed them, and /init printed the help screen instead of initializing.
+  const { execFileSync } = require('node:child_process');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-init-'));
+  const out = execFileSync(process.execPath,
+    [path.join(__dirname, '..', 'commands', 'intent.js'), '--init'],
+    { cwd: dir, encoding: 'utf8', input: '' }); // non-TTY → starter artifacts, no prompts
+  assert.ok(!/Usage:/.test(out), 'must not print the help screen');
+  assert.ok(fs.existsSync(path.join(dir, '.intent', 'vision.md')), '.intent/vision.md created');
+});

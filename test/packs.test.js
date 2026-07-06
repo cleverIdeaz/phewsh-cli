@@ -42,6 +42,11 @@ test('linked packs are not vendored', () => {
   assert.ok(linked.includes('loop-library'));
   assert.ok(linked.includes('unlimited-ocr'));
   assert.ok(linked.includes('skillspector'));
+  assert.match(
+    packs.PACKS['loop-library'].install,
+    /npx skills add Forward-Future\/loop-library --skill loopy -g/,
+    'loop-library points at the current upstream Loopy install command',
+  );
 
   for (const name of linked) {
     const { written } = packs.install(name, d);

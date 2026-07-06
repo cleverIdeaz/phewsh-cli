@@ -81,6 +81,26 @@ function assembleRaw(answers) {
   return answers.map((a) => `${a.title} (${a.directive}): ${a.answer}`).join('\n');
 }
 
+// No-AI spec from the user's own words: the first answer line becomes the
+// goal (node label stripped), the raw text survives verbatim in pps.intent.raw,
+// and the first task points back at the AI compile.
+function fallbackSpec(raw) {
+  const first = String(raw).split('\n').find(l => l.trim()) || "Capture this project's intent";
+  const goal = first.replace(/^[A-Za-z]+ \([^)]*\):\s*/, '').trim().slice(0, 200);
+  return {
+    goal,
+    success_criteria: [],
+    constraints: [],
+    inputs: [],
+    outputs: [],
+    tasks: [
+      { text: 'Re-run `phewsh clarify --update` to compile this spec with AI', type: 'copy' },
+      { text: 'Refine the vision — complete vision.md', type: 'do' },
+      { text: 'Define Phase 1 — what is the smallest thing to ship?', type: 'do' },
+    ],
+  };
+}
+
 function buildClarifySystemPrompt(existing) {
   const isRefine = !!(existing?.intent?.goal);
   return `You are a project compiler. Your job is to extract clean, structured intent from messy human input.
@@ -264,8 +284,12 @@ async function main() {
       ? await callClarifyViaHarness(harnessId, raw, existing)
       : await callClarifyAPI(config.apiKey, raw, existing);
   } catch (err) {
-    console.error('\n  Clarify failed:', err.message, '\n');
-    process.exit(1);
+    // A failed compile must NEVER eat the user's answers. They just walked
+    // the compass — write a plain no-AI spec from what they typed, and let
+    // `clarify --update` enrich it when a route works again.
+    console.log(`\n  AI compile unavailable (${err.message}).`);
+    console.log('  Saving your answers as a plain spec instead — nothing you typed is lost.');
+    extracted = fallbackSpec(raw);
   }
 
   const entity = getProjectName();
@@ -333,4 +357,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { run: main, GUIDE_NODES, INTENT_NODES, assembleRaw, askGuided, extractJson };
+module.exports = { run: main, GUIDE_NODES, INTENT_NODES, assembleRaw, askGuided, extractJson, fallbackSpec };

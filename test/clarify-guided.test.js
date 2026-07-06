@@ -119,3 +119,14 @@ test('the deep walk asks all twelve nodes', async () => {
   assert.equal(result.length, 12);
   assert.match(lines.join('\n'), /12 questions — the full compass/);
 });
+
+test('fallbackSpec: a failed AI compile never eats the answers', () => {
+  const { fallbackSpec } = require('../commands/clarify');
+  const raw = 'Purpose (the core reason this exists): help parents cook faster\nScope (boundaries, in and out): one recipe list';
+  const spec = fallbackSpec(raw);
+  assert.equal(spec.goal, 'help parents cook faster'); // node label stripped
+  assert.ok(spec.tasks.length >= 1);
+  assert.match(spec.tasks[0].text, /clarify --update/);
+  // degenerate input still yields a writable spec
+  assert.ok(fallbackSpec('').goal.length > 0);
+});
