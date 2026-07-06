@@ -74,10 +74,39 @@ function firstLines(text, n) {
     .join('\n');
 }
 
+// The accountability invitation. A real project (it has .git) with no
+// .intent/ gets ONE gentle note injected — telling the agent to offer
+// grounding once, and to drop it if declined. Once per project, ever
+// (tracked in ~/.phewsh/intent-nudges.json); every later session is
+// silent again. Invite, never nag — the recorded stance (decisions.md).
+function maybeIntentInvitation() {
+  try {
+    if (!fs.existsSync(path.join(process.cwd(), '.git'))) return; // not a real project — cost nothing
+    const nudgeFile = path.join(PHEWSH_DIR, 'intent-nudges.json');
+    let seen = {};
+    try { seen = JSON.parse(fs.readFileSync(nudgeFile, 'utf-8')); } catch { /* first nudge ever */ }
+    if (seen && seen[process.cwd()]) return; // already invited here — never again
+    seen = (seen && typeof seen === 'object') ? seen : {};
+    seen[process.cwd()] = new Date().toISOString();
+    fs.mkdirSync(PHEWSH_DIR, { recursive: true });
+    fs.writeFileSync(nudgeFile, JSON.stringify(seen, null, 2));
+    process.stdout.write([
+      '# phewsh — one-time note for this project',
+      'This repo has no `.intent/` yet — no durable project truth that travels between AI tools.',
+      'If the user starts substantial (non-trivial) work here, offer ONCE, in plain language, to ground the project:',
+      '`phewsh clarify` (guided walk) or `phewsh init` (two questions) creates `.intent/` — vision, plan, and next steps that every AI tool reads, so the next session picks up where this one left off.',
+      'If they decline, or the work is trivial/exploratory, drop it and never raise it again. Do not create `.intent/` yourself uninvited.',
+    ].join('\n') + '\n');
+    appendBreadcrumb('intent-invite');
+  } catch { /* the invitation is a nicety — never break the host */ }
+}
+
 function sessionStart() {
   if (!fs.existsSync(path.join(INTENT_DIR, 'vision.md')) &&
       !fs.existsSync(path.join(INTENT_DIR, 'plan.md'))) {
-    // No .intent/ here — stay silent, cost the host nothing.
+    // No .intent/ here — one gentle invitation if this is a real project,
+    // then silence forever.
+    maybeIntentInvitation();
     process.exit(0);
   }
 

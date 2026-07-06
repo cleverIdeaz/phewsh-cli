@@ -262,6 +262,10 @@ async function turnOn(skipConfirm) {
 
 function turnOff() {
   const removed = removeClaudeHooks();
+  // Full reversibility: ambient off takes the lifecycle hooks with it too.
+  let gateRemoved = false;
+  try { gateRemoved = disablePreToolGate(); } catch { /* best-effort */ }
+  if (gateRemoved) removed.push('lifecycle hooks (PreToolUse gate + PostToolUse receipt)');
   const { removed: removedGlobal } = selfheal.removeGlobalBaseFiles();
   const { removed: removedProject } = selfheal.removeProjectContextFiles();
   const { removed: removedSlash } = slash.removeSlashCommands();
@@ -269,6 +273,7 @@ function turnOff() {
   delete ledger.applied['claude-code'];
   delete ledger.applied.globalBase;
   delete ledger.applied.slashCommands;
+  delete ledger.applied.lifecycle;
   delete ledger.autoEnabledAt;
   ledger.disabled = true; // sticky opt-out — first-run auto-enable must respect this
   saveLedger(ledger);
@@ -365,6 +370,11 @@ async function ensureAuto() {
 
   const hasClaude = installed.some(h => h.id === 'claude-code');
   const changes = hasClaude ? applyClaudeHooks() : [];
+  // Neal's ruling (Jul 5): the lifecycle hooks (PreToolUse gate + PostToolUse
+  // receipt) install with first-run auto-enable too — they're fail-open,
+  // redacted, and removed by the same `phewsh ambient off` / `gate enforce off`.
+  let gateApplied = false;
+  if (hasClaude) { try { gateApplied = enablePreToolGate(); } catch { /* best-effort */ } }
   const { written } = selfheal.syncGlobalBaseFiles();
   const slashWritten = slash.installSlashCommands().written;
   // Refresh existing project files only — first-run auto-enable must not dump
@@ -378,6 +388,13 @@ async function ensureAuto() {
       captures: '~/.phewsh/ambient-sessions.jsonl — timestamp, project, cwd only',
       undo: 'phewsh ambient off',
     };
+    if (gateApplied) {
+      ledger.applied.lifecycle = {
+        at: now, file: CLAUDE_SETTINGS,
+        what: 'PreToolUse gate (deny protected paths, ask on high blast radius) + PostToolUse redacted receipt',
+        undo: 'phewsh gate enforce off (or phewsh ambient off)',
+      };
+    }
   }
   if (written.length > 0) {
     ledger.applied.globalBase = { at: now, files: written, undo: 'phewsh ambient off' };
@@ -394,6 +411,7 @@ async function ensureAuto() {
     console.log('');
     console.log(`  ${b(cream('phewsh set itself up across your AI tools'))} ${sage('— so they stay in sync with your project intent.')}`);
     if (hasClaude) console.log(`    ${teal('+')} ${slate('Claude Code gets a brief from a project\'s .intent/ at session start')}`);
+    if (gateApplied) console.log(`    ${teal('+')} ${slate('guardrails: protected-path writes gated + a redacted receipt of what ran')}`);
     written.forEach(f => console.log(`    ${teal('+')} ${slate('environment note added to ' + f)}`));
     if (slashWritten.length) console.log(`    ${teal('+')} ${cream('/intent')} ${slate('command added to ' + slashWritten.join(', '))}`);
     console.log(`    ${sage('In any project with')} ${cream('.intent/')}${sage(', your tools now read its real intent. Reversible:')} ${cream('phewsh ambient off')}`);

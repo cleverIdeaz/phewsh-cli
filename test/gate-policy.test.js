@@ -103,3 +103,27 @@ test('adapter: PostToolUse hook writes a redacted receipt breadcrumb, silent to 
   assert.equal(bash.target, 'rm');
   assert.ok(!log.includes('secret-dir'), 'shell args never recorded');
 });
+
+test('adapter: session-start invites intent ONCE in a git repo without .intent, then stays silent', () => {
+  const os = require('os');
+  const fs = require('fs');
+  const bin = path.join(__dirname, '..', 'bin', 'phewsh.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-home-'));
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-repo-'));
+  fs.mkdirSync(path.join(repo, '.git'));
+  const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-plain-'));
+  const run = (cwd) => execFileSync(process.execPath, [bin, 'hook', 'session-start'], {
+    encoding: 'utf8', cwd,
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+  // First open: one gentle invitation, framed as offer-once.
+  const first = run(repo);
+  assert.match(first, /no `\.intent\/` yet/);
+  assert.match(first, /offer ONCE/);
+  assert.match(first, /phewsh clarify/);
+  assert.match(first, /never raise it again/);
+  // Second open of the same repo: silence — invite, never nag.
+  assert.equal(run(repo).trim(), '');
+  // A non-repo directory never gets the invitation at all.
+  assert.equal(run(plain).trim(), '');
+});
