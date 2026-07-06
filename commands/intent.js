@@ -6,7 +6,12 @@ const { createPPS, writeGuardedViews } = require('../lib/pps');
 
 const os = require('os');
 const configFile = require('../lib/config-file');
-const args = process.argv.slice(3);
+// Flags may arrive as `phewsh intent --init` / `phewsh init --init` (flag at
+// argv[3]) or as a direct `node intent.js --init` (flag at argv[2]) — the
+// session used the direct form and every flag was silently missed, so /init
+// printed help instead of initializing. Accept both shapes.
+const rawArgs = process.argv.slice(2);
+const args = (rawArgs[0] === 'intent' || rawArgs[0] === 'init') ? rawArgs.slice(1) : rawArgs;
 const INTENT_DIR = path.join(process.cwd(), '.intent');
 const CONFIG_PATH = path.join(os.homedir(), '.phewsh', 'config.json');
 const WEB_URL = 'https://phewsh.com/intent';

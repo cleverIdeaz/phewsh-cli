@@ -1329,8 +1329,8 @@ async function main() {
       if (choice.kind === 'init') {
         bootstrapChoices = null;
         try {
-          const { execSync } = require('child_process');
-          execSync('node ' + path.join(__dirname, 'intent.js') + ' --init', { stdio: 'inherit' });
+          const { execFileSync } = require('child_process');
+          execFileSync(process.execPath, [path.join(__dirname, '..', 'bin', 'phewsh.js'), 'intent', '--init'], { stdio: 'inherit' });
           intentFiles = loadIntentContext();
           systemPrompt = buildSystemPrompt(intentFiles);
           if (intentFiles.length > 0) {
@@ -1916,8 +1916,8 @@ async function main() {
           console.log(`  ${sage('Use /reload to refresh context')}\n`);
         } else {
           try {
-            const { execSync } = require('child_process');
-            execSync('node ' + path.join(__dirname, 'intent.js') + ' --init', { stdio: 'inherit' });
+            const { execFileSync } = require('child_process');
+            execFileSync(process.execPath, [path.join(__dirname, '..', 'bin', 'phewsh.js'), 'intent', '--init'], { stdio: 'inherit' });
             intentFiles = loadIntentContext();
             systemPrompt = buildSystemPrompt(intentFiles);
             if (intentFiles.length > 0) {
