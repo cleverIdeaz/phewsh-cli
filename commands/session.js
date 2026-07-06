@@ -733,6 +733,39 @@ async function main() {
     console.log('');
   }
 
+  // The project scanner — bootstrap option AND /scan slash command. Lists
+  // .intent/ projects plus likely candidates (git, no .intent yet, reason
+  // shown) from the usual folders, numbered so a bare digit opens one.
+  function runScanMenu() {
+    const spin = ui.spinner('scanning your usual folders');
+    const found = scanForProjects();
+    let candidates = [];
+    try { candidates = scanForCandidates(); } catch { /* advisory — scan still useful without it */ }
+    spin.stop();
+    if (found.length === 0 && candidates.length === 0) {
+      bootstrapChoices = null;
+      console.log(`  ${sage('No .intent/ projects found in the usual folders.')}`);
+      console.log(`  ${slate('cd into a project and run phewsh, or /init to start one here.')}`);
+      return;
+    }
+    bootstrapChoices = [];
+    if (found.length > 0) {
+      console.log(`  ${teal('●')} ${sage(`Found ${found.length} project${found.length !== 1 ? 's' : ''} with .intent/:`)}`);
+      for (const p of found) {
+        bootstrapChoices.push({ kind: 'open', path: p.path });
+        console.log(`  ${teal(String(bootstrapChoices.length))} ${cream(p.name)} ${slate('· ' + tildify(p.path))}`);
+      }
+    }
+    if (candidates.length > 0) {
+      console.log(`  ${teal('●')} ${sage(`${candidates.length} likely candidate${candidates.length !== 1 ? 's' : ''} — no shared memory yet:`)}`);
+      for (const p of candidates) {
+        bootstrapChoices.push({ kind: 'open', path: p.path });
+        console.log(`  ${teal(String(bootstrapChoices.length))} ${cream(p.name)} ${slate('· ' + tildify(p.path) + ' · ' + p.reason)}`);
+      }
+    }
+    console.log(`  ${slate('pick a number to open it')}`);
+  }
+
   function showBootstrapMenu(projects) {
     console.log(`  ${b(cream('Where do you want to work?'))}`);
     bootstrapChoices = [];
@@ -976,7 +1009,7 @@ async function main() {
   // RECOGNIZED leading /command (or @harness) token turns teal (peach for @)
   // so you know it registered. Arguments stay plain. TTY-only, fail-soft.
   const KNOWN_COMMANDS = new Set([
-    'quit', 'exit', 'q', 'help', 'h', 'init', 'intent', 'clarify', 'model',
+    'quit', 'exit', 'q', 'help', 'h', 'init', 'intent', 'clarify', 'scan', 'model',
     'models', 'council', 'all', 'provider', 'route', 'use', 'work', 'switch', 'run',
     'clear', 'status', 'key', 'login', 'export', 'push', 'pull', 'serve',
     'sync', 'harnesses', 'fallback', 'outcomes', 'tour', 'update', 'upgrade',
@@ -1277,8 +1310,11 @@ async function main() {
       return;
     }
 
-    // Root bootstrap: a bare number opens a project, inits, or scans
-    if (bootstrapChoices && messages.length === 0 && /^[0-9]{1,2}$/.test(input)) {
+    // Scan/bootstrap menu: a bare number opens a project, inits, or scans.
+    // Any other input means the user moved on — drop the menu so it never
+    // shadows a later digit (mirrors the nextChoices rule above).
+    if (bootstrapChoices && !/^[0-9]{1,2}$/.test(input)) bootstrapChoices = null;
+    if (bootstrapChoices && /^[0-9]{1,2}$/.test(input)) {
       const choice = bootstrapChoices[parseInt(input, 10) - 1];
       if (!choice) {
         console.log(`  ${sage('Pick 1-' + bootstrapChoices.length)}`);
@@ -1309,35 +1345,7 @@ async function main() {
         return;
       }
       if (choice.kind === 'scan') {
-        const spin = ui.spinner('scanning your usual folders');
-        const found = scanForProjects();
-        // Likely candidates: real repos with no .intent/ yet — the projects
-        // most worth grounding. Same shallow scan; shown with their reason.
-        let candidates = [];
-        try { candidates = scanForCandidates(); } catch { /* advisory — scan still useful without it */ }
-        spin.stop();
-        if (found.length === 0 && candidates.length === 0) {
-          bootstrapChoices = null;
-          console.log(`  ${sage('No .intent/ projects found in the usual folders.')}`);
-          console.log(`  ${slate('cd into a project and run phewsh, or /init to start one here.')}`);
-        } else {
-          bootstrapChoices = [];
-          if (found.length > 0) {
-            console.log(`  ${teal('●')} ${sage(`Found ${found.length} project${found.length !== 1 ? 's' : ''} with .intent/:`)}`);
-            for (const p of found) {
-              bootstrapChoices.push({ kind: 'open', path: p.path });
-              console.log(`  ${teal(String(bootstrapChoices.length))} ${cream(p.name)} ${slate('· ' + tildify(p.path))}`);
-            }
-          }
-          if (candidates.length > 0) {
-            console.log(`  ${teal('●')} ${sage(`${candidates.length} likely candidate${candidates.length !== 1 ? 's' : ''} — no shared memory yet:`)}`);
-            for (const p of candidates) {
-              bootstrapChoices.push({ kind: 'open', path: p.path });
-              console.log(`  ${teal(String(bootstrapChoices.length))} ${cream(p.name)} ${slate('· ' + tildify(p.path) + ' · ' + p.reason)}`);
-            }
-          }
-          console.log(`  ${slate('pick a number to open it')}`);
-        }
+        runScanMenu();
         console.log('');
         rl.prompt();
         return;
@@ -1671,6 +1679,7 @@ async function main() {
           console.log(`    ${teal('@name')} ${slate('<msg>')}   ${sage('one message to one tool — @codex review this')}`);
           console.log(`    ${teal('/work')} ${slate('[tool]')}  ${sage('hand off to the full interactive tool, outcome on return')}`);
           console.log(`    ${teal('/clarify')}       ${sage('turn messy thoughts into .intent/ artifacts')}`);
+          console.log(`    ${teal('/scan')}          ${sage('find your projects — and repos that need shared memory')}`);
           console.log(`    ${teal('/outcomes')}      ${sage('label what you kept — the record that gets smarter')}`);
           console.log('');
           console.log(`  ${slate('/help all')} ${sage('everything')}  ${slate('·')}  ${slate('/tour')} ${sage('walkthrough')}  ${slate('·')}  ${slate('/quit')} ${sage('exit')}`);
@@ -1688,6 +1697,7 @@ async function main() {
         console.log(`    ${teal('/learn')}       ${sage('what your record taught — which tool keeps best, by kind of work')}`);
         console.log('');
         console.log(`  ${cream('author .intent/')}`);
+        console.log(`    ${teal('/scan')}        ${sage('Find your projects — and likely candidates with no .intent/ yet')}`);
         console.log(`    ${teal('/init')}        ${sage('Create .intent/ for this project')}`);
         console.log(`    ${teal('/intent')}      ${sage('Pause and reflect — view or update .intent/ before moving on')}`);
         console.log(`    ${teal('/remember')}    ${sage('Jot a decision to .intent/decisions.md — every tool inherits it')}`);
@@ -1917,6 +1927,13 @@ async function main() {
             console.error(`  ${sage('Init failed:')} ${err.message}`);
           }
         }
+        console.log('');
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === 'scan') {
+        runScanMenu();
         console.log('');
         rl.prompt();
         return;

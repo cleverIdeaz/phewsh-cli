@@ -36,7 +36,39 @@ function list() {
     console.log(`    ${slate('source: ' + p.source)}`);
   }
   console.log('');
-  console.log(`  ${sage('Install:')} ${cream('phewsh pack install <name>')}   ${sage('Remove:')} ${cream('phewsh pack remove <name>')}`);
+  console.log(`  ${sage('Install:')} ${cream('phewsh pack install <name>')}   ${sage('All official packs at once:')} ${cream('phewsh pack install all')}`);
+  console.log(`  ${sage('Remove:')}  ${cream('phewsh pack remove <name>')}    ${sage('Read about every pack:')} ${cream('phewsh.com/cli#packs')}`);
+  console.log('');
+}
+
+// `phewsh pack install all` — every official (vendored) pack in one confirmed
+// pass. Linked packs stay pointers to their upstream source; we list them so
+// nothing external ever installs silently.
+async function installAll() {
+  const vendored = Object.entries(packs.PACKS).filter(([, p]) => p.kind !== 'linked');
+  const linked = Object.entries(packs.PACKS).filter(([, p]) => p.kind === 'linked');
+  const pending = vendored.filter(([name]) => !packs.isInstalled(name));
+
+  console.log('');
+  if (pending.length === 0) {
+    console.log(`  ${sage('All official packs are already installed here.')}`);
+  } else {
+    console.log(`  ${b(cream('Official phewsh packs'))} ${sage('— ' + pending.length + ' to install:')}`);
+    pending.forEach(([name, p]) => console.log(`    ${cream(name.padEnd(16))} ${slate(p.desc)}`));
+    console.log('');
+    const ok = await confirm(`  ${b('Install ' + (pending.length === 1 ? 'it' : 'all ' + pending.length) + ' here?')} ${slate('[y/N] ')}`);
+    if (!ok) { console.log(`  ${sage('Nothing changed.')}\n`); return; }
+    for (const [name] of pending) {
+      const { written } = packs.install(name);
+      console.log(`  ${green('●')} ${cream(name)} ${slate('→ ' + written.join(', '))}`);
+    }
+    console.log(`  ${sage('Remove any:')} ${cream('phewsh pack remove <name>')}`);
+  }
+  if (linked.length > 0) {
+    console.log('');
+    console.log(`  ${sage(linked.length + ' more are linked packs — separate tools phewsh points at but never auto-installs:')}`);
+    console.log(`    ${cream('phewsh pack')} ${sage('lists them ·')} ${cream('phewsh.com/cli#packs')} ${sage('tells their stories')}`);
+  }
   console.log('');
 }
 
@@ -89,6 +121,7 @@ function remove(name) {
 async function main() {
   const sub = process.argv[3];
   const name = process.argv[4];
+  if (sub === 'install' && name === 'all') return installAll();
   if (sub === 'install' && name) return install(name);
   if (sub === 'remove' && name) return remove(name);
   return list();
