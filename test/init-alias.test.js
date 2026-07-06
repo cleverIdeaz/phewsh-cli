@@ -51,3 +51,16 @@ test('feedback builds a prefilled public-issue URL with only visible metadata', 
   // no user text: template placeholder, empty title
   assert.match(decodeURIComponent(buildUrl('')).replace(/\+/g, ' '), /What happened\?/);
 });
+
+test('feedback list renders the queue and routes it into the project room', () => {
+  const { formatIssues } = require('../commands/feedback');
+  const lines = formatIssues([
+    { number: 3, title: 'clarify loses answers on codex route', created_at: new Date(Date.now() - 2 * 86400000).toISOString(), labels: [{ name: 'bug' }] },
+    { number: 4, title: 'cockpit offline in safari', created_at: new Date().toISOString(), labels: [] },
+  ]).join('\n');
+  assert.match(lines, /#3/);
+  assert.match(lines, /clarify loses answers/);
+  assert.match(lines, /2d · bug/);
+  assert.match(lines, /phewsh dispatch/); // the loop-closing hint
+  assert.match(formatIssues([]).join('\n'), /queue is clear/);
+});

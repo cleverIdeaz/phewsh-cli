@@ -172,7 +172,7 @@ function showHelp() {
   console.log(`    ${cyan('bypass')}     ${g('Went around phewsh? Record why — 10 seconds, no guilt')}`);
   console.log('');
   console.log(`  ${b(w('configure'))}`);
-  console.log(`    ${cyan('feedback')}   ${g('Tell us where it breaks — prefilled GitHub issue, nothing hidden')}`);
+  console.log(`    ${cyan('feedback')}   ${g('Tell us what you need — prefilled GitHub issue; `feedback list` shows the queue')}`);
   console.log(`    ${cyan('login')}      ${g('Identity + API key + cloud sync')}`);
   console.log(`    ${cyan('link')}       ${g('Link local .intent/ to cloud project')}`);
   console.log(`    ${cyan('update')}     ${g('Update phewsh — or `phewsh update auto on` to stay current automatically')}`);

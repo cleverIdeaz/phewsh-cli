@@ -40,8 +40,47 @@ function openBrowser(url) {
   } catch { return false; }
 }
 
+// Render the open feedback queue. Pure — testable without the network.
+function formatIssues(issues) {
+  if (!Array.isArray(issues) || issues.length === 0) {
+    return ['  No open feedback right now — the queue is clear.'];
+  }
+  const lines = issues.slice(0, 15).map(i => {
+    const age = Math.max(0, Math.floor((Date.now() - new Date(i.created_at).getTime()) / 86400000));
+    const labels = (i.labels || []).map(l => l.name).filter(Boolean).join(', ');
+    return `  ${g('#' + i.number)} ${w(String(i.title).slice(0, 70))} ${g(`· ${age}d${labels ? ' · ' + labels : ''}`)}`;
+  });
+  lines.push('');
+  lines.push(`  ${g('Pull one into the project room:')} ${cyan('phewsh dispatch "fix: <title> (#<n>)"')} ${g('— teammate or agent claims it, PR closes the loop.')}`);
+  return lines;
+}
+
+// `phewsh feedback list` — read the public queue so feedback lands in
+// phewsh's own loop (issue → task → claim → PR → record), with phewsh as
+// the database rather than any one chat.
+async function list() {
+  console.log('');
+  console.log(`  ${b(w('Open feedback'))} ${g('— github.com/cleverIdeaz/phewsh-cli/issues')}`);
+  console.log('');
+  try {
+    const res = await fetch('https://api.github.com/repos/cleverIdeaz/phewsh-cli/issues?state=open&per_page=15', {
+      headers: { accept: 'application/vnd.github+json' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+    const issues = (await res.json()).filter(i => !i.pull_request); // issues only, not PRs
+    formatIssues(issues).forEach(l => console.log(l));
+  } catch (err) {
+    console.log(`  ${g('Could not reach GitHub (' + err.message + ') — browse directly:')}`);
+    console.log(`  ${w('https://github.com/cleverIdeaz/phewsh-cli/issues')}`);
+  }
+  console.log('');
+}
+
 function main() {
-  const text = process.argv.slice(3).filter(a => !a.startsWith('--')).join(' ');
+  const argv = process.argv.slice(3);
+  if (argv[0] === 'list') return list();
+  const text = argv.filter(a => !a.startsWith('--')).join(' ');
   const url = buildUrl(text);
   console.log('');
   console.log(`  ${b(w('phewsh feedback'))} ${g('— where it breaks is exactly what we want to hear')}`);
@@ -60,3 +99,4 @@ function main() {
 
 module.exports = main;
 module.exports.buildUrl = buildUrl;
+module.exports.formatIssues = formatIssues;
