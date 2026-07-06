@@ -115,6 +115,7 @@ const COMMANDS = {
   dispatch: () => require('../commands/task')(),
   pack:    () => require('../commands/pack')(),
   hook:    () => require('../commands/hook')(),
+  feedback: () => require('../commands/feedback')(),
   welcome: () => require('../commands/welcome')(),
   intro:   () => require('../commands/welcome')(),
   help:    showHelp,
@@ -171,6 +172,7 @@ function showHelp() {
   console.log(`    ${cyan('bypass')}     ${g('Went around phewsh? Record why — 10 seconds, no guilt')}`);
   console.log('');
   console.log(`  ${b(w('configure'))}`);
+  console.log(`    ${cyan('feedback')}   ${g('Tell us where it breaks — prefilled GitHub issue, nothing hidden')}`);
   console.log(`    ${cyan('login')}      ${g('Identity + API key + cloud sync')}`);
   console.log(`    ${cyan('link')}       ${g('Link local .intent/ to cloud project')}`);
   console.log(`    ${cyan('update')}     ${g('Update phewsh — or `phewsh update auto on` to stay current automatically')}`);

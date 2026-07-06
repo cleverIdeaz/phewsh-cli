@@ -40,3 +40,14 @@ test('intent.js parses flags when invoked directly (the /init help-screen bug)',
   assert.ok(!/Usage:/.test(out), 'must not print the help screen');
   assert.ok(fs.existsSync(path.join(dir, '.intent', 'vision.md')), '.intent/vision.md created');
 });
+
+test('feedback builds a prefilled public-issue URL with only visible metadata', () => {
+  const { buildUrl } = require('../commands/feedback');
+  const url = buildUrl('clarify lost my answers');
+  assert.match(url, /^https:\/\/github\.com\/cleverIdeaz\/phewsh-cli\/issues\/new\?/);
+  const decoded = decodeURIComponent(url).replace(/\+/g, ' '); // URLSearchParams space encoding
+  assert.match(decoded, /clarify lost my answers/);
+  assert.match(decoded, /phewsh \d+\.\d+\.\d+/);
+  // no user text: template placeholder, empty title
+  assert.match(decodeURIComponent(buildUrl('')).replace(/\+/g, ' '), /What happened\?/);
+});
