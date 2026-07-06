@@ -78,3 +78,28 @@ test('adapter: PreToolUse hook emits a deny decision for a protected write, fail
   const allow = run({ tool_name: 'Read', tool_input: { file_path: 'README.md' }, cwd: '/tmp' });
   assert.equal(allow.trim(), '');
 });
+
+test('adapter: PostToolUse hook writes a redacted receipt breadcrumb, silent to the host', () => {
+  const os = require('os');
+  const fs = require('fs');
+  const bin = path.join(__dirname, '..', 'bin', 'phewsh.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-home-'));
+  const run = (payload) => execFileSync(process.execPath, [bin, 'hook', 'post-tool'], {
+    input: JSON.stringify(payload), encoding: 'utf8',
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+  // File tool: relative target recorded, content never.
+  const out1 = run({ tool_name: 'Write', tool_input: { file_path: '/tmp/proj/src/app.js', content: 'SECRET=hunter2' }, cwd: '/tmp/proj' });
+  assert.equal(out1.trim(), '', 'post-tool is silent to the host');
+  // Shell tool: binary only, args never.
+  run({ tool_name: 'Bash', tool_input: { command: 'rm -rf /tmp/proj/secret-dir' }, cwd: '/tmp/proj' });
+  const log = fs.readFileSync(path.join(home, '.phewsh', 'ambient-sessions.jsonl'), 'utf8');
+  const lines = log.trim().split('\n').map(l => JSON.parse(l));
+  const write = lines.find(l => l.tool === 'Write');
+  const bash = lines.find(l => l.tool === 'Bash');
+  assert.equal(write.event, 'post-tool');
+  assert.equal(write.target, 'src/app.js');
+  assert.ok(!log.includes('hunter2'), 'content never recorded');
+  assert.equal(bash.target, 'rm');
+  assert.ok(!log.includes('secret-dir'), 'shell args never recorded');
+});

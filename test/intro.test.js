@@ -10,12 +10,15 @@ function capture() {
 }
 
 const fakeHarnesses = (installed) => () => installed;
+// Deterministic no-op project discovery — real scans read the host machine.
+const noScan = { scanProjects: () => [], scanCandidates: () => [] };
 
 test('intro renders mark, promise, logo, and next step', async () => {
   const c = capture();
   await playIntro({
     animated: false,
     out: c.out,
+    ...noScan,
     listHarnesses: fakeHarnesses([
       { label: 'Claude Code', role: 'writes code', installed: true },
       { label: 'Codex', role: 'reasons & reviews', bestFor: 'reviews', installed: true },
@@ -33,6 +36,7 @@ test('found tools light up with their roles and a count', async () => {
   const res = await playIntro({
     animated: false,
     out: c.out,
+    ...noScan,
     listHarnesses: fakeHarnesses([
       { label: 'Claude Code', role: 'writes code', installed: true },
       { label: 'Codex', role: 'reasons & reviews', installed: true },
@@ -49,7 +53,7 @@ test('found tools light up with their roles and a count', async () => {
 
 test('no tools found shows the install nudge, not a fake count', async () => {
   const c = capture();
-  const res = await playIntro({ animated: false, out: c.out, listHarnesses: fakeHarnesses([]) });
+  const res = await playIntro({ animated: false, out: c.out, ...noScan, listHarnesses: fakeHarnesses([]) });
   assert.equal(res.toolsFound, 0);
   assert.match(c.text(), /none found yet/);
   assert.match(c.text(), /phewsh setup/);
@@ -59,7 +63,7 @@ test('no tools found shows the install nudge, not a fake count', async () => {
 
 test('a thrown harness lookup degrades gracefully (no tools)', async () => {
   const c = capture();
-  const res = await playIntro({ animated: false, out: c.out, listHarnesses: () => { throw new Error('boom'); } });
+  const res = await playIntro({ animated: false, out: c.out, ...noScan, listHarnesses: () => { throw new Error('boom'); } });
   assert.equal(res.toolsFound, 0);
   assert.match(c.text(), /none found yet/);
 });
@@ -73,6 +77,50 @@ test('farewell renders the shush mark', () => {
 test('animated mode awaits the injected delay', async () => {
   const c = capture();
   let waits = 0;
-  await playIntro({ animated: true, delay: async () => { waits++; }, out: c.out, listHarnesses: fakeHarnesses([{ label: 'Codex', role: 'x', installed: true }]) });
+  await playIntro({ animated: true, delay: async () => { waits++; }, out: c.out, ...noScan, listHarnesses: fakeHarnesses([{ label: 'Codex', role: 'x', installed: true }]) });
   assert.ok(waits > 0, 'delay was awaited in animated mode');
+});
+
+test('project discovery beat: existing projects and candidates, with counts', async () => {
+  const c = capture();
+  const res = await playIntro({
+    animated: false,
+    out: c.out,
+    listHarnesses: fakeHarnesses([{ label: 'Codex', role: 'x', installed: true }]),
+    scanProjects: () => [{ name: 'a', path: '/a' }, { name: 'b', path: '/b' }],
+    scanCandidates: () => [{ name: 'c', path: '/c', reason: 'git repo, no .intent/ yet' }],
+  });
+  assert.equal(res.projectsFound, 2);
+  assert.equal(res.candidatesFound, 1);
+  const t = c.text();
+  assert.match(t, /2 projects already share memory/);
+  assert.match(t, /1 likely candidate \(git, no \.intent yet\)/);
+  assert.match(t, /run phewsh inside one/);
+});
+
+test('no projects and no candidates: the beat stays silent', async () => {
+  const c = capture();
+  const res = await playIntro({
+    animated: false,
+    out: c.out,
+    ...noScan,
+    listHarnesses: fakeHarnesses([{ label: 'Codex', role: 'x', installed: true }]),
+  });
+  assert.equal(res.projectsFound, 0);
+  assert.equal(res.candidatesFound, 0);
+  assert.ok(!/share memory/.test(c.text()));
+  assert.ok(!/likely candidate/.test(c.text()));
+});
+
+test('a thrown project scan degrades gracefully', async () => {
+  const c = capture();
+  const res = await playIntro({
+    animated: false,
+    out: c.out,
+    listHarnesses: fakeHarnesses([]),
+    scanProjects: () => { throw new Error('boom'); },
+    scanCandidates: () => { throw new Error('boom'); },
+  });
+  assert.equal(res.projectsFound, 0);
+  assert.match(c.text(), /none found yet/);
 });

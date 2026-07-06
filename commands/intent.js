@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { execSync } = require('child_process');
-const { createPPS, writePPS, generateViews } = require('../lib/pps');
+const { createPPS, writeGuardedViews } = require('../lib/pps');
 
 const os = require('os');
 const configFile = require('../lib/config-file');
@@ -136,16 +136,14 @@ async function initIntent() {
     },
   });
 
-  writePPS(INTENT_DIR, pps);
-  const { vision, plan, next } = generateViews(pps);
-  fs.writeFileSync(path.join(INTENT_DIR, 'vision.md'), vision);
-  fs.writeFileSync(path.join(INTENT_DIR, 'plan.md'), plan);
-  fs.writeFileSync(path.join(INTENT_DIR, 'next.md'), next);
+  // Truth guard: never overwrite a hand-authored file (a partial .intent/
+  // slips past hasExistingArtifacts — e.g. vision.md alone).
+  const { written, preserved } = writeGuardedViews(INTENT_DIR, pps);
 
-  console.log(`  ✓ .intent/pps.json     — Structured project spec (source of truth)`);
-  console.log(`  ✓ .intent/vision.md    — The north star`);
-  console.log(`  ✓ .intent/plan.md      — The strategy`);
-  console.log(`  ✓ .intent/next.md      — What to do right now`);
+  console.log(`  ✓ .intent/pps.json     — Compiled spec (the .md files are the truth)`);
+  const label = { 'vision.md': 'The north star', 'plan.md': 'The strategy', 'next.md': 'What to do right now' };
+  for (const f of written) console.log(`  ✓ .intent/${f.padEnd(12)} — ${label[f]}`);
+  for (const f of preserved) console.log(`  ● .intent/${f.padEnd(12)} — kept as-is (yours, hand-authored)`);
   console.log(`
   Tip: Run \`phewsh clarify\` to have AI compile your messy intent into a precise spec.
 

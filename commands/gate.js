@@ -402,21 +402,22 @@ function enforce(action) {
   if (on === 'on' || on === 'enable') {
     const changed = amb.enablePreToolGate();
     console.log(changed
-      ? `\n  ${green('●')} Gate enforcement ${green('ON')} — Claude Code asks/denies on protected-path writes and high-blast-radius commands before they run.\n  ${g('Reversible:')} phewsh gate enforce off\n`
+      ? `\n  ${green('●')} Gate enforcement ${green('ON')} — before a tool runs, Claude Code asks/denies on protected-path writes and high-blast-radius commands; after, a redacted receipt records what ran (tool + target, never content).\n  ${g('Reversible:')} phewsh gate enforce off\n`
       : `\n  Gate enforcement already on.\n`);
     return;
   }
   if (on === 'off' || on === 'disable') {
     const changed = amb.disablePreToolGate();
-    console.log(changed ? `\n  Gate enforcement ${yellow('OFF')} — PreToolUse hook removed.\n` : `\n  Gate enforcement was not on.\n`);
+    console.log(changed ? `\n  Gate enforcement ${yellow('OFF')} — PreToolUse + PostToolUse hooks removed.\n` : `\n  Gate enforcement was not on.\n`);
     return;
   }
   // status
   const applied = amb.preToolGateApplied();
-  console.log(`\n  Gate enforcement: ${applied ? green('ON') : g('off')} ${g('(Claude Code PreToolUse)')}`);
+  console.log(`\n  Gate enforcement: ${applied ? green('ON') : g('off')} ${g('(Claude Code PreToolUse + PostToolUse)')}`);
   console.log(`  ${g('Turn on:')} phewsh gate enforce on   ${g('· off:')} phewsh gate enforce off`);
-  console.log(`  ${g('What it does: deny writes to protected paths (.env, keys, .git/…),')}`);
+  console.log(`  ${g('Before: deny writes to protected paths (.env, keys, .git/…),')}`);
   console.log(`  ${g('ask before high-blast-radius shell (rm -rf, force-push, sudo…).')}`);
+  console.log(`  ${g('After: redacted receipt of what ran — tool + target, never args or content.')}`);
   console.log(`  ${g('Opt-in, local-only, fail-open. Other tools: advisory only for now.')}\n`);
 }
 

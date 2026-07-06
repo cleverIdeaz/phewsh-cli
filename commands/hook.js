@@ -215,11 +215,41 @@ function preTool() {
   }
 }
 
+// PostToolUse adapter — the other half of the lifecycle. After a write-ish
+// tool runs, leave a redacted receipt (tool name + relative target, or just
+// the binary name for shell — NEVER args, content, or output) so `phewsh`
+// can show what agents actually did here. Always silent to the host, always
+// fail-open: a broken receipt must never slow or break the tool that ran.
+function postTool() {
+  try {
+    if (process.stdin.isTTY) process.exit(0); // not a real hook invocation
+    let raw = '';
+    try { raw = fs.readFileSync(0, 'utf-8'); } catch { process.exit(0); }
+    let payload = {};
+    try { payload = JSON.parse(raw || '{}'); } catch { process.exit(0); }
+    const tool = payload.tool_name || payload.toolName;
+    if (!tool) process.exit(0);
+    const input = payload.tool_input || payload.toolInput || {};
+    const cwd = payload.cwd || process.cwd();
+    let target = null;
+    if (typeof input.file_path === 'string') {
+      target = path.relative(cwd, input.file_path) || input.file_path;
+    } else if (typeof input.command === 'string') {
+      target = String(input.command).trim().split(/\s+/)[0] || null; // binary only, never args
+    }
+    appendBreadcrumb('post-tool', { tool, ...(target ? { target } : {}) });
+    process.exit(0);
+  } catch {
+    process.exit(0); // fail open, always
+  }
+}
+
 function main() {
   const event = process.argv[3];
   if (event === 'session-start') return sessionStart();
   if (event === 'session-end') return sessionEnd();
   if (event === 'pre-tool') return preTool();
+  if (event === 'post-tool') return postTool();
   // Unknown event: exit silently — hooks must never error the host tool.
   process.exit(0);
 }

@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const readline = require('readline');
-const { readPPS, writePPS, createPPS, generateViews } = require('../lib/pps');
+const { readPPS, createPPS, writeGuardedViews } = require('../lib/pps');
 const configFile = require('../lib/config-file');
 
 const CONFIG_PATH = path.join(os.homedir(), '.phewsh', 'config.json');
@@ -45,35 +45,28 @@ async function askForInput() {
   });
 }
 
-// The guided walk — the five strongest nodes of the web's 12-node Intent
-// Compass, asked one at a time. The web compass helps the user *see* what
-// they're building; this brings that to the terminal. Not a form: every
-// question is skippable, and the point is to help you think, not interrogate.
-const GUIDE_NODES = [
-  { id: 'purpose', title: 'Purpose', directive: 'the core reason this exists',
-    q: 'What outcome are you really after — and why does this need to exist?' },
-  { id: 'audience', title: 'Audience', directive: 'the people this serves',
-    q: 'Who is this for? Who feels it most when it works?' },
-  { id: 'method', title: 'Method', directive: 'the mechanism and approach',
-    q: 'How does it actually work — the core mechanism or approach?' },
-  { id: 'scope', title: 'Scope', directive: 'boundaries, in and out',
-    q: "What's in — and just as important, what's deliberately out, for now?" },
-  { id: 'differentiation', title: 'Edge', directive: 'what makes this yours',
-    q: 'What would be lost if someone else built this instead of you?' },
-];
+// The guided walk — nodes of the 12-node Intent Compass, asked one at a
+// time. Default: the five strongest (CORE_NODES). --deep: all twelve. The
+// web compass helps the user *see* what they're building; this brings that
+// to the terminal. Not a form: every question is skippable, and the point
+// is to help you think, not interrogate.
+const { INTENT_NODES, CORE_NODES } = require('../lib/intent-nodes');
+const GUIDE_NODES = CORE_NODES;
 
 function ask(rl, question) {
   return new Promise((resolve) => rl.question(question, (a) => resolve((a || '').trim())));
 }
 
 // rl is injectable so the walk can be driven deterministically in tests.
-async function askGuided(rl = readline.createInterface({ input: process.stdin, output: process.stdout })) {
-  console.log('\n  Five quick questions to align your own thinking first —');
+// nodes defaults to the five-node core walk; --deep passes all twelve.
+async function askGuided(rl = readline.createInterface({ input: process.stdin, output: process.stdout }), nodes = GUIDE_NODES) {
+  const count = nodes.length === 5 ? 'Five quick questions' : `${nodes.length} questions — the full compass`;
+  console.log(`\n  ${count} to align your own thinking first —`);
   console.log('  a sentence or two each. Blank skips. (esc stops, nothing saved.)\n');
   const answers = [];
-  for (let i = 0; i < GUIDE_NODES.length; i++) {
-    const n = GUIDE_NODES[i];
-    console.log(`  ${i + 1}/${GUIDE_NODES.length}  ${n.title} — ${n.directive}`);
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    console.log(`  ${i + 1}/${nodes.length}  ${n.title} — ${n.directive}`);
     const a = await ask(rl, `  ${n.q}\n  > `);
     if (a) answers.push({ ...n, answer: a });
     console.log('');
@@ -169,13 +162,6 @@ async function callClarifyViaHarness(harnessId, raw, existing) {
   return extractJson(out || '');
 }
 
-function writeViews(intentDir, pps) {
-  const { vision, plan, next } = generateViews(pps);
-  fs.writeFileSync(path.join(intentDir, 'vision.md'), vision);
-  fs.writeFileSync(path.join(intentDir, 'plan.md'), plan);
-  fs.writeFileSync(path.join(intentDir, 'next.md'), next);
-}
-
 async function main() {
   // ESC backs out cleanly at any point — nothing half-written, no error.
   if (process.stdin.isTTY) {
@@ -194,17 +180,19 @@ async function main() {
 
   Usage:
     phewsh clarify                    Guided: a 5-question walk that aligns your thinking, then compiles
+    phewsh clarify --deep             The full 12-node compass, one question at a time
     phewsh clarify --freeform         Free-form: describe it all in one messy blob
     phewsh clarify --text "..."       Inline: pass raw text directly
-    phewsh clarify --update           Refine existing PPS with new input
+    phewsh clarify --update           Refine existing intent with new input
 
   What it does:
-    Walks you through the five strongest nodes of the Intent Compass —
-    Purpose, Audience, Method, Scope, Edge — one question at a time, so the
-    terminal helps you *think*, not just compile. Then turns your answers
-    into a structured project spec (PPS):
-    Writes .intent/pps.json as the source of truth.
-    Generates vision.md, plan.md, next.md as human-readable views.
+    Walks you through the strongest nodes of the 12-node Intent Compass —
+    Purpose, Audience, Method, Scope, Edge (--deep adds Context, Resources,
+    Strategy, Signals, Risks, Values, Impact) — one question at a time, so
+    the terminal helps you *think*, not just compile. Then it writes
+    vision.md, plan.md, next.md — YOUR files, the project truth every AI
+    tool reads. Files you've edited by hand are never overwritten.
+    (.intent/pps.json holds the compiled spec + generation receipts.)
 
   Requires:
     An installed agent CLI (Claude Code, Codex, Gemini…) — phewsh uses its
@@ -249,7 +237,9 @@ async function main() {
       raw = await askForInput();
     } else {
       // Guided is the default interactive path: help the user think first.
-      const answers = await askGuided();
+      // --deep walks the full 12-node compass instead of the strongest five.
+      const deep = args.includes('--deep') || args.includes('-d');
+      const answers = await askGuided(undefined, deep ? INTENT_NODES : GUIDE_NODES);
       raw = assembleRaw(answers);
       if (!raw) {
         // Skipped every question — fall back to a single free-form description.
@@ -310,14 +300,19 @@ async function main() {
     pps.state.phase = 'plan';
   }
 
-  fs.mkdirSync(INTENT_DIR, { recursive: true });
-  writePPS(INTENT_DIR, pps);
-  writeViews(INTENT_DIR, pps);
+  // The truth guard: the .md files are user-owned truth. Hand-edited (or
+  // pre-existing hand-authored) files are preserved, never regenerated.
+  const { written, preserved } = writeGuardedViews(INTENT_DIR, pps);
 
-  console.log(`  ✓ .intent/pps.json       — structured project spec`);
-  console.log(`  ✓ .intent/vision.md      — ${pps.intent.goal}`);
-  console.log(`  ✓ .intent/plan.md        — ${pps.intent.success_criteria.length} outcomes, ${pps.intent.constraints.length} constraints`);
-  console.log(`  ✓ .intent/next.md        — ${pps.tasks.length} actions\n`);
+  console.log(`  ✓ .intent/pps.json       — compiled spec (the .md files are the truth)`);
+  const detail = {
+    'vision.md': pps.intent.goal,
+    'plan.md': `${pps.intent.success_criteria.length} outcomes, ${pps.intent.constraints.length} constraints`,
+    'next.md': `${pps.tasks.length} actions`,
+  };
+  for (const f of written) console.log(`  ✓ .intent/${f.padEnd(14)} — ${detail[f]}`);
+  for (const f of preserved) console.log(`  ● .intent/${f.padEnd(14)} — kept as-is (yours — edited by hand, phewsh won't overwrite it)`);
+  console.log('');
   console.log(`  Goal: ${pps.intent.goal}\n`);
   if (pps.tasks.length > 0) {
     console.log('  First actions:');
@@ -338,4 +333,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { run: main, GUIDE_NODES, assembleRaw, askGuided, extractJson };
+module.exports = { run: main, GUIDE_NODES, INTENT_NODES, assembleRaw, askGuided, extractJson };

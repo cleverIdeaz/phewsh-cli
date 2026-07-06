@@ -50,7 +50,7 @@ const {
   relativeFolder,
   shouldCollapsePaste,
 } = require('../lib/session-display');
-const { recordProject, listProjects, scanForProjects, fmtAgo } = require('../lib/projects-index');
+const { recordProject, listProjects, scanForProjects, scanForCandidates, fmtAgo } = require('../lib/projects-index');
 
 // Brand palette shortcuts
 const { b, d, w, g, green, cyan, yellow,
@@ -500,7 +500,7 @@ async function main() {
   } else if (atHome || recents.length > 0) {
     row('PROJECT', slate('none here — your projects are listed below'));
   } else {
-    row('PROJECT', cream(projectName) + slate(' · no memory yet — ') + sage('/init'));
+    row('PROJECT', cream(projectName) + slate(' · no memory yet — ') + sage('/init') + slate(' fast · ') + sage('/clarify') + slate(' guided'));
   }
 
   row('ROUTE', route
@@ -718,7 +718,13 @@ async function main() {
     try { recordProject(dir); } catch { /* best-effort */ }
     bootstrapChoices = null;
     console.log('');
-    console.log(`  ${teal('●')} ${cream(projectName)} ${slate('·')} ${sage(`.intent/ ${intentFiles.length} file${intentFiles.length !== 1 ? 's' : ''} loaded`)} ${slate('· via ' + routeLabel(route, config))}`);
+    if (intentFiles.length === 0) {
+      // A candidate, not yet a project — invite intent, don't fake context.
+      console.log(`  ${teal('●')} ${cream(projectName)} ${slate('·')} ${sage('no .intent/ yet')} ${slate('· via ' + routeLabel(route, config))}`);
+      console.log(`  ${sage('Ground it:')} ${cream('/init')} ${sage('two questions, instant artifacts')} ${slate('·')} ${cream('/clarify')} ${sage('guided — compiles your messy idea into a spec')}`);
+    } else {
+      console.log(`  ${teal('●')} ${cream(projectName)} ${slate('·')} ${sage(`.intent/ ${intentFiles.length} file${intentFiles.length !== 1 ? 's' : ''} loaded`)} ${slate('· via ' + routeLabel(route, config))}`);
+    }
     console.log('');
     maybeHealOnEntry();
     showContinuity();
@@ -1305,17 +1311,31 @@ async function main() {
       if (choice.kind === 'scan') {
         const spin = ui.spinner('scanning your usual folders');
         const found = scanForProjects();
+        // Likely candidates: real repos with no .intent/ yet — the projects
+        // most worth grounding. Same shallow scan; shown with their reason.
+        let candidates = [];
+        try { candidates = scanForCandidates(); } catch { /* advisory — scan still useful without it */ }
         spin.stop();
-        if (found.length === 0) {
+        if (found.length === 0 && candidates.length === 0) {
           bootstrapChoices = null;
           console.log(`  ${sage('No .intent/ projects found in the usual folders.')}`);
           console.log(`  ${slate('cd into a project and run phewsh, or /init to start one here.')}`);
         } else {
-          console.log(`  ${teal('●')} ${sage(`Found ${found.length} project${found.length !== 1 ? 's' : ''}:`)}`);
-          bootstrapChoices = found.map(p => ({ kind: 'open', path: p.path }));
-          found.forEach((p, i) => {
-            console.log(`  ${teal(String(i + 1))} ${cream(p.name)} ${slate('· ' + tildify(p.path))}`);
-          });
+          bootstrapChoices = [];
+          if (found.length > 0) {
+            console.log(`  ${teal('●')} ${sage(`Found ${found.length} project${found.length !== 1 ? 's' : ''} with .intent/:`)}`);
+            for (const p of found) {
+              bootstrapChoices.push({ kind: 'open', path: p.path });
+              console.log(`  ${teal(String(bootstrapChoices.length))} ${cream(p.name)} ${slate('· ' + tildify(p.path))}`);
+            }
+          }
+          if (candidates.length > 0) {
+            console.log(`  ${teal('●')} ${sage(`${candidates.length} likely candidate${candidates.length !== 1 ? 's' : ''} — no shared memory yet:`)}`);
+            for (const p of candidates) {
+              bootstrapChoices.push({ kind: 'open', path: p.path });
+              console.log(`  ${teal(String(bootstrapChoices.length))} ${cream(p.name)} ${slate('· ' + tildify(p.path) + ' · ' + p.reason)}`);
+            }
+          }
           console.log(`  ${slate('pick a number to open it')}`);
         }
         console.log('');

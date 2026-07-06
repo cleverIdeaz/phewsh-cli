@@ -97,3 +97,25 @@ test('extractJson finds JSON embedded in prose', () => {
 test('extractJson throws cleanly when there is no JSON', () => {
   assert.throws(() => extractJson('I cannot help with that.'), /could not parse/);
 });
+
+test('the canonical compass has 12 nodes and the walk is its first five', () => {
+  const { INTENT_NODES } = require('../lib/intent-nodes');
+  assert.equal(INTENT_NODES.length, 12);
+  assert.deepEqual(INTENT_NODES.slice(0, 5), GUIDE_NODES);
+  // orthogonal: no duplicate ids
+  assert.equal(new Set(INTENT_NODES.map(n => n.id)).size, 12);
+  // ids match the web compass (intent-analysis.ts)
+  assert.deepEqual([...INTENT_NODES.map(n => n.id)].sort(), [
+    'audience', 'context', 'differentiation', 'impact', 'method', 'purpose',
+    'resources', 'risks', 'scope', 'signals', 'strategy', 'values',
+  ]);
+});
+
+test('the deep walk asks all twelve nodes', async () => {
+  const { INTENT_NODES } = require('../lib/intent-nodes');
+  const rl = stubRl(INTENT_NODES.map(n => 'answer for ' + n.id));
+  const { result, lines } = await captureLog(() => askGuided(rl, INTENT_NODES));
+  assert.equal(rl.prompts.length, 12);
+  assert.equal(result.length, 12);
+  assert.match(lines.join('\n'), /12 questions — the full compass/);
+});

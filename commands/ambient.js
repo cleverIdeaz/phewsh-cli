@@ -31,6 +31,10 @@ const HOOK_END = { type: 'command', command: 'phewsh hook session-end' };
 // matcher scopes the hook to the tools the policy actually judges, so it never
 // fires on harmless reads.
 const HOOK_PRETOOL = { type: 'command', command: 'phewsh hook pre-tool' };
+// The receipt half of the lifecycle: after a write-ish tool runs, record a
+// redacted breadcrumb (tool + target, never args/content). Installed and
+// removed together with the pre-tool gate — one toggle, whole lifecycle.
+const HOOK_POSTTOOL = { type: 'command', command: 'phewsh hook post-tool' };
 const PRETOOL_MATCHER = 'Write|Edit|MultiEdit|NotebookEdit|Bash';
 
 // ANSI helpers (256-color per cli/lib/ui.js palette rules)
@@ -111,22 +115,31 @@ function preToolGateApplied() {
 function enablePreToolGate() {
   const settings = loadClaudeSettings() || {};
   settings.hooks = settings.hooks || {};
-  settings.hooks.PreToolUse = settings.hooks.PreToolUse || [];
-  if (hasHook(settings, 'PreToolUse', HOOK_PRETOOL.command)) return false;
-  settings.hooks.PreToolUse.push({ matcher: PRETOOL_MATCHER, hooks: [HOOK_PRETOOL] });
-  fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
-  return true;
+  let changed = false;
+  for (const [event, hook] of [['PreToolUse', HOOK_PRETOOL], ['PostToolUse', HOOK_POSTTOOL]]) {
+    settings.hooks[event] = settings.hooks[event] || [];
+    if (hasHook(settings, event, hook.command)) continue;
+    settings.hooks[event].push({ matcher: PRETOOL_MATCHER, hooks: [hook] });
+    changed = true;
+  }
+  if (changed) fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
+  return changed;
 }
 
 function disablePreToolGate() {
   const settings = loadClaudeSettings();
-  if (!settings?.hooks?.PreToolUse) return false;
-  const before = settings.hooks.PreToolUse.length;
-  settings.hooks.PreToolUse = settings.hooks.PreToolUse
-    .map(e => ({ ...e, hooks: (e.hooks || []).filter(h => h.command !== HOOK_PRETOOL.command) }))
-    .filter(e => e.hooks.length > 0);
-  if ((settings.hooks.PreToolUse || []).length === 0) delete settings.hooks.PreToolUse;
-  const changed = before !== (settings.hooks.PreToolUse?.length ?? 0);
+  if (!settings?.hooks) return false;
+  let changed = false;
+  for (const [event, hook] of [['PreToolUse', HOOK_PRETOOL], ['PostToolUse', HOOK_POSTTOOL]]) {
+    const entries = settings.hooks[event];
+    if (!entries) continue;
+    const before = entries.length;
+    settings.hooks[event] = entries
+      .map(e => ({ ...e, hooks: (e.hooks || []).filter(h => h.command !== hook.command) }))
+      .filter(e => e.hooks.length > 0);
+    if ((settings.hooks[event] || []).length === 0) delete settings.hooks[event];
+    if (before !== (settings.hooks[event]?.length ?? 0)) changed = true;
+  }
   if (changed) fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
   return changed;
 }
