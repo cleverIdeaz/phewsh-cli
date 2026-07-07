@@ -1,6 +1,11 @@
 # phewsh
 
-Turn intent into action. Structure your thinking, execute your next step.
+**One mission. Many AI tools. No lost context.**
+
+PHEWSH is the continuity layer for AI-assisted work: it turns what you're
+building into durable project intent (`.intent/`) and carries it across
+Claude Code, Codex, Cursor, Gemini, your terminal, and your team — so the
+next AI knows what the last one learned.
 
 ## Install
 
@@ -203,6 +208,18 @@ the same canonical `.intent/` source.
 ## Web app
 
 [phewsh.com/intent](https://phewsh.com/intent)
+
+## Feedback
+
+Something missing, confusing, or broken?
+
+```bash
+phewsh feedback "what you expected vs what happened"
+```
+
+That opens a prefilled public issue on this repo (only your words plus
+version/OS/node — documented in [SECURITY.md](./SECURITY.md)). Private
+channel: hello@phewsh.com.
 
 ## License
 

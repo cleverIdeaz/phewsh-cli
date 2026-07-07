@@ -59,7 +59,7 @@ function main() {
   if (!hasIntent) {
     console.log(row('PROJECT', `${off} ${sage('no shared project truth here yet')}`));
     console.log(row('', slate('create it so you — and the next AI — inherit context:')));
-    console.log(row('', cream('phewsh intent --init')));
+    console.log(row('', `${cream('phewsh init')} ${slate('(two questions) · guided:')} ${cream('phewsh clarify')}`));
   } else {
     const files = fs.readdirSync(intentDir).filter(f => /\.(md|json)$/.test(f));
     const has = (f) => files.includes(f);
