@@ -12,7 +12,7 @@
 //   phewsh serve --port 8080  Start on custom port
 
 const http = require('http');
-const { execSync, spawn } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
@@ -33,6 +33,18 @@ function getPort() {
   const idx = process.argv.indexOf('--port');
   if (idx !== -1 && process.argv[idx + 1]) return parseInt(process.argv[idx + 1], 10);
   return 7483;
+}
+
+// The project this worker serves = the directory it was started in. The
+// normalized origin remote is the identity the claim path already verifies
+// against (task.js repo-match); name alone is display, remote is truth.
+function currentProject() {
+  let remote = null;
+  try {
+    remote = execFileSync('git', ['remote', 'get-url', 'origin'], { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim() || null;
+  } catch { /* not a git repo, or no origin — worker still serves the directory */ }
+  return { name: path.basename(process.cwd()), remote };
 }
 
 // ─── Runtime Detection ─────────────────────────────────────────────────────
@@ -245,10 +257,12 @@ function main() {
       return;
     }
 
-    // Health check
+    // Health check — includes which project this worker is serving, so the
+    // web can say "worker online — <project>" instead of an anonymous dot.
     if (url.pathname === '/health' && req.method === 'GET') {
       return json(req, res, {
         status: 'ok',
+        project: currentProject(),
         runtimes: detectRuntimes(),
         version: require('../package.json').version,
         uptime: process.uptime(),
@@ -350,6 +364,26 @@ function main() {
   };
 
   const server = http.createServer(handleRequest);
+
+  // One worker per machine (per port) for now. A second `phewsh serve` used to
+  // die with a raw EADDRINUSE stack — say what's true and how to proceed instead.
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.log('');
+      console.log(`  ${yellow('●')} A phewsh worker is already running on port ${port}.`);
+      console.log('');
+      console.log(`  ${g('One worker per machine for now — the running worker serves the project')}`);
+      console.log(`  ${g('directory it was started in. To serve a different project:')}`);
+      console.log(`    ${g('· stop the other worker (Ctrl+C) and start this one, or')}`);
+      console.log(`    ${g('· run on another port:')} ${w(`phewsh serve --port ${port + 1}`)}`);
+      console.log(`      ${g('(note: phewsh.com currently discovers port 7483 only)')}`);
+      console.log('');
+      console.log(`  ${g('A one-worker-many-projects registry is the planned next step.')}`);
+      console.log('');
+      process.exit(1);
+    }
+    throw err;
+  });
 
   server.listen(port, '127.0.0.1', () => {
     const mirror = http.createServer(handleRequest);
