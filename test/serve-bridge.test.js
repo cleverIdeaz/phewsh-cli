@@ -71,6 +71,45 @@ test('/health reports which project this worker serves (name + origin remote)', 
   }
 });
 
+test('/health exposes ONLY deliberately registered projects from the serve registry', async () => {
+  const os = require('node:os');
+  const fs = require('node:fs');
+  const { execFileSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-serve-reg-'));
+  const indexFile = path.join(root, 'index.json');
+  // One registered (serve:true) + one merely session-recorded — only the first may appear
+  const repo = path.join(root, 'team-app');
+  fs.mkdirSync(repo);
+  execFileSync('git', ['init', '-q'], { cwd: repo });
+  execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/team-app.git'], { cwd: repo });
+  fs.writeFileSync(indexFile, JSON.stringify({
+    projects: {
+      [repo]: { name: 'team-app', path: repo, remote: 'github.com/example/team-app', serve: true },
+      '/tmp/just-visited': { name: 'just-visited', path: repo, lastOpened: new Date().toISOString() },
+    },
+  }));
+
+  const port = PORT + 2;
+  const child = spawn(process.execPath, [BIN, 'serve', '--port', String(port)], {
+    cwd: path.join(__dirname, '..'),
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, NO_COLOR: '1', PHEWSH_PROJECT_INDEX: indexFile },
+  });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d.toString(); });
+  const handle = { child, output: () => out };
+  try {
+    await waitForListen(handle);
+    const health = await getJson(port, '/health');
+    assert.ok(Array.isArray(health.projects), '/health must carry a projects array');
+    assert.deepStrictEqual(health.projects, [{ name: 'team-app', remote: 'github.com/example/team-app' }]);
+    // The banner teaches the registry too
+    assert.match(out, /team-app/);
+  } finally {
+    child.kill('SIGKILL');
+  }
+});
+
 test('second worker on a taken port exits 1 with an honest message, no stack trace', async () => {
   const first = startServe(PORT + 1);
   try {

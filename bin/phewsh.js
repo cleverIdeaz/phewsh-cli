@@ -103,6 +103,8 @@ const COMMANDS = {
   setup:   () => require('../commands/setup')(),
   update:  () => require('../commands/update')(),
   serve:   () => require('../commands/serve')(),
+  project: () => require('../commands/project')(),
+  projects: () => require('../commands/project')(),
   sequence: () => require('../commands/sequence')(),
   seq:     () => require('../commands/sequence')(),
   ambient: () => require('../commands/ambient')(),
@@ -161,6 +163,7 @@ function showHelp() {
   console.log(`    ${cyan('watch')}      ${g('Auto-sync .intent/ → native harness files + cloud')}`);
   console.log(`    ${cyan('push/pull')}  ${g('Manual sync to/from phewsh.com/intent')}`);
   console.log(`    ${cyan('serve')}      ${g('Execution bridge — run from phewsh.com/ion or /intent')}`);
+  console.log(`    ${cyan('project')}    ${g('Choose which projects this machine\'s worker shows on /ion')}`);
   console.log(`    ${cyan('ion')}        ${g('Shared visual room for humans + local agents')}`);
   console.log(`    ${cyan('mcp')}        ${g('Connect AI agents via MCP protocol')}`);
   console.log(`    ${cyan('ambient')}    ${g('Continuity without launching phewsh — enhance your other tools')}`);

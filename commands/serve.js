@@ -71,6 +71,7 @@ function detectRuntimes() {
 // ─── Job Queue ─────────────────────────────────────────────────────────────
 
 const { gatherReceipts, recordSessionEvent, recordResultFile } = require('../lib/receipts-data');
+const { serveProjects } = require('../lib/projects-index');
 
 const jobs = new Map();
 
@@ -259,10 +260,13 @@ function main() {
 
     // Health check — includes which project this worker is serving, so the
     // web can say "worker online — <project>" instead of an anonymous dot.
+    // `projects` = the explicit serve registry (`phewsh project add`); only
+    // deliberately registered projects are exposed, never the session index.
     if (url.pathname === '/health' && req.method === 'GET') {
       return json(req, res, {
         status: 'ok',
         project: currentProject(),
+        projects: serveProjects().map(p => ({ name: p.name, remote: p.remote })),
         runtimes: detectRuntimes(),
         version: require('../package.json').version,
         uptime: process.uptime(),
@@ -328,6 +332,7 @@ function main() {
           pending: pendingDecisions().length,
           bypasses: bypassStats(),
           recentProjects: listProjects().slice(0, 5).map(p => ({ name: p.name, path: p.path, lastOpened: p.lastOpened })),
+          servedProjects: serveProjects().map(p => ({ name: p.name, remote: p.remote })),
           version: require('../package.json').version,
         });
       } catch (err) {
@@ -406,6 +411,20 @@ function main() {
       console.log('');
       console.log(`  ${yellow('Tip:')} Install Claude Code CLI for live task execution`);
       console.log(`  ${g('https://docs.anthropic.com/en/docs/claude-code')}`);
+    }
+    console.log('');
+    const registered = serveProjects();
+    const here = currentProject();
+    console.log(`  ${b('Projects this worker shows on phewsh.com/ion:')}`);
+    if (registered.length === 0) {
+      console.log(`    ${g('only the current directory:')} ${w(here.name)}${here.remote ? g(` (${here.remote})`) : ''}`);
+      console.log(`    ${g('Register projects by name so the web knows them:')} ${cyan('phewsh project add')} ${g('(run inside each repo)')}`);
+    } else {
+      for (const p of registered) {
+        const isHere = p.path === process.cwd();
+        console.log(`    ${green('●')} ${w(p.name)}${g(` (${p.remote})`)}${isHere ? g(' ← current directory') : ''}`);
+      }
+      console.log(`    ${g('Manage the list:')} ${cyan('phewsh project')}`);
     }
     console.log('');
     console.log(`  ${g('Open phewsh.com/ion to see the worker online, or phewsh.com/intent → Work')}`);
