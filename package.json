@@ -1,7 +1,7 @@
 {
   "name": "phewsh",
-  "version": "0.15.77",
-  "description": "One mission. Many AI tools. No lost context. PHEWSH keeps your project's intent, decisions, and working context aligned across Claude Code, Codex, Cursor, Gemini and your team \u2014 so the next AI knows what the last one learned.",
+  "version": "0.15.78",
+  "description": "One mission. Many AI tools. No lost context. PHEWSH keeps your project's intent, decisions, and working context aligned across Claude Code, Codex, Cursor, Gemini and your team — so the next AI knows what the last one learned.",
   "bin": {
     "phewsh": "bin/phewsh.js"
   },

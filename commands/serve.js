@@ -220,7 +220,7 @@ function json(req, res, data, status = 200) {
 
 function main() {
   if (process.argv.includes('--help') || process.argv.includes('-h')) {
-    console.log('\n  phewsh serve — local execution bridge for phewsh.com/intent');
+    console.log('\n  phewsh serve — local execution bridge for phewsh.com/ion and phewsh.com/intent');
     console.log('    Runs a loopback server so the web workspace can dispatch to your');
     console.log('    installed agents. Stays running until you stop it (ctrl+c).');
     console.log('\n  Usage:  phewsh serve [--port <n>]   (default 7483)\n');
@@ -358,7 +358,7 @@ function main() {
 
     console.log('');
     console.log(`  ${b(w('PHEWSH Serve'))} ${g('v' + require('../package.json').version)}`);
-    console.log(`  ${g('Live execution bridge for phewsh.com/intent')}`);
+    console.log(`  ${g('Live execution bridge for phewsh.com/ion and phewsh.com/intent')}`);
     console.log('');
     console.log(`  ${green('●')} Running on ${w(`http://localhost:${port}`)}`);
     console.log(`  ${g('Web cockpit:')} ${w('phewsh.com/cockpit')} ${g('— mirrors this machine live')}`);
@@ -374,7 +374,7 @@ function main() {
       console.log(`  ${g('https://docs.anthropic.com/en/docs/claude-code')}`);
     }
     console.log('');
-    console.log(`  ${g('Open phewsh.com/intent → Work tab to see the Live indicator')}`);
+    console.log(`  ${g('Open phewsh.com/ion to see the worker online, or phewsh.com/intent → Work')}`);
     console.log(`  ${g('Press Ctrl+C to stop')}`);
     console.log('');
   });

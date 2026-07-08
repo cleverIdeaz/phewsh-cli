@@ -113,6 +113,7 @@ const COMMANDS = {
   remember: () => require('../commands/remember')(),
   task:    () => require('../commands/task')(),
   dispatch: () => require('../commands/task')(),
+  ion:     () => require('../commands/ion')(),
   pack:    () => require('../commands/pack')(),
   hook:    () => require('../commands/hook')(),
   feedback: () => require('../commands/feedback')(),
@@ -159,7 +160,8 @@ function showHelp() {
   console.log(`    ${cyan('seq')}        ${g('Sequence all memory → optimal context for any agent')}`);
   console.log(`    ${cyan('watch')}      ${g('Auto-sync .intent/ → native harness files + cloud')}`);
   console.log(`    ${cyan('push/pull')}  ${g('Manual sync to/from phewsh.com/intent')}`);
-  console.log(`    ${cyan('serve')}      ${g('Execution bridge — run from phewsh.com/intent')}`);
+  console.log(`    ${cyan('serve')}      ${g('Execution bridge — run from phewsh.com/ion or /intent')}`);
+  console.log(`    ${cyan('ion')}        ${g('Shared visual room for humans + local agents')}`);
   console.log(`    ${cyan('mcp')}        ${g('Connect AI agents via MCP protocol')}`);
   console.log(`    ${cyan('ambient')}    ${g('Continuity without launching phewsh — enhance your other tools')}`);
   console.log(`    ${cyan('shim')}       ${g('Guaranteed launch banner — phewsh prints status before each tool')}`);
