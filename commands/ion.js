@@ -35,8 +35,9 @@ function showHelp() {
     ${cyan('phewsh ion')}              ${sage('open phewsh.com/ion')}
     ${cyan('phewsh ion open')}         ${sage('same')}
 
-  ${sage('Make this machine available')}
-    ${cyan('phewsh ion serve')}        ${sage('start the local worker bridge')}
+  ${sage('Make this machine available — the two-step')}
+    ${cyan('phewsh project add')}      ${sage('1. register this repo (once per repo)')}
+    ${cyan('phewsh serve')}            ${sage('2. one worker serves the whole machine')}
     ${cyan('phewsh ion status')}       ${sage('show bridge/project/task status')}
 
   ${sage('Use the existing task loop')}
@@ -92,7 +93,7 @@ module.exports = async function run() {
     if (sub === 'serve' || sub === 'worker') return runServe(rest);
     if (sub === 'status') {
       console.log(`\n  ${cream('Ion room:')} ${cyan(WEB_URL)}`);
-      console.log(`  ${sage('Local worker:')} ${cream('phewsh ion serve')}`);
+      console.log(`  ${sage('Local worker:')} ${cream('phewsh project add')} ${sage('(once per repo), then')} ${cream('phewsh serve')}`);
       return runTask(['list']);
     }
     if (sub === 'task' || sub === 'tasks') return runTask(rest.length ? rest : ['list']);

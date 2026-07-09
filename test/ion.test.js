@@ -12,7 +12,9 @@ const run = (args) => execFileSync(process.execPath, [BIN, ...args], { encoding:
 test('`phewsh ion help` describes the room and its real subcommands', () => {
   const out = run(['ion', 'help']);
   assert.match(out, /shared rooms/i);
-  assert.match(out, /phewsh ion serve/);
+  // 0.15.80 ruled the two-step canonical: register the repo, then one worker per machine
+  assert.match(out, /phewsh project add/);
+  assert.match(out, /phewsh serve/);
   assert.match(out, /phewsh ion claim/);
   assert.match(out, /invite/);
 });
