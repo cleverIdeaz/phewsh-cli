@@ -2110,8 +2110,8 @@ async function main() {
 
       if (cmd === 'login') {
         try {
-          const { execSync } = require('child_process');
-          execSync('node ' + path.join(__dirname, 'login.js'), { stdio: 'inherit' });
+          const { execFileSync } = require('child_process');
+          execFileSync(process.execPath, [path.join(__dirname, 'login.js')], { stdio: 'inherit' });
           config = loadConfig();
         } catch (err) {
           console.error(`  ${sage('Login failed:')} ${err.message}`);
@@ -2122,8 +2122,8 @@ async function main() {
 
       if (cmd === 'setup') {
         try {
-          const { execSync } = require('child_process');
-          execSync(`node ${path.join(__dirname, '..', 'bin', 'phewsh.js')} setup`, { stdio: 'inherit' });
+          const { execFileSync } = require('child_process');
+          execFileSync(process.execPath, [path.join(__dirname, '..', 'bin', 'phewsh.js'), 'setup'], { stdio: 'inherit' });
           config = loadConfig();
           route = resolveRoute(config, harnesses);
           console.log(`  ${teal('●')} ${sage('Route now:')} ${cream(routeLabel(route, config))}`);
@@ -2634,8 +2634,8 @@ async function main() {
           }
           updateSpin.stop(`${peach(pkg.version)} ${sage('→')} ${peach(data.version)}`);
           console.log(`  ${sage('Installing...')}\n`);
-          const { execSync } = require('child_process');
-          execSync(`npm install -g ${pkg.name}@latest`, { stdio: 'inherit' });
+          const { execFileSync } = require('child_process');
+          execFileSync('npm', ['install', '-g', `${pkg.name}@latest`], { stdio: 'inherit' });
           console.log(`\n  ${teal('●')} ${sage('Updated to')} ${cream(data.version)}`);
           console.log(`  ${slate('Restart phewsh to use the new version.')}\n`);
         } catch (err) {

@@ -392,31 +392,35 @@ async function main() {
   console.log(`\n  Unknown: ${subcommand}. Run \`phewsh gate --help\`.\n`);
 }
 
-// Opt-in deterministic enforcement: register/unregister the Claude Code
-// PreToolUse hook that makes the Decision Gate act BEFORE a tool runs. Reversible,
-// Claude-Code-only for now (it's the one provider with a real veto hook).
+// Opt-in deterministic enforcement: register/unregister the PreToolUse hooks
+// that make the Decision Gate act BEFORE a tool runs. Reversible. One policy,
+// two harnesses: Claude Code (settings.json) + Codex (~/.codex/hooks.json,
+// same hook schema). Codex asks you to trust the hook once in its UI.
 function enforce(action) {
   let amb;
   try { amb = require('./ambient'); } catch { console.log('\n  Enforcement unavailable.\n'); return; }
   const on = (action || 'status').toLowerCase();
   if (on === 'on' || on === 'enable') {
     const changed = amb.enablePreToolGate();
+    const codexOn = amb.codexGateApplied();
     console.log(changed
-      ? `\n  ${green('●')} Gate enforcement ${green('ON')} — before a tool runs, Claude Code asks/denies on protected-path writes and high-blast-radius commands; after, a redacted receipt records what ran (tool + target, never content).\n  ${g('Reversible:')} phewsh gate enforce off\n`
+      ? `\n  ${green('●')} Gate enforcement ${green('ON')} — Claude Code${codexOn ? ' + Codex' : ''}.\n  Catastrophic commands (rm -rf / ~ /Users… · disk erase · mkfs) are denied at every autonomy level — denies never prompt, so auto mode keeps flowing.\n  High-blast-radius commands (force-push, sudo, pipe-to-shell…) ask first only when .intent autonomy is manual/review/unset.\n  After a gated tool runs: a redacted receipt (tool + target, never content).\n${codexOn ? `  ${g('Codex: approve the one-time hook-trust prompt on next launch.')}\n` : ''}  ${g('Reversible:')} phewsh gate enforce off\n`
       : `\n  Gate enforcement already on.\n`);
     return;
   }
   if (on === 'off' || on === 'disable') {
     const changed = amb.disablePreToolGate();
-    console.log(changed ? `\n  Gate enforcement ${yellow('OFF')} — PreToolUse + PostToolUse hooks removed.\n` : `\n  Gate enforcement was not on.\n`);
+    console.log(changed ? `\n  Gate enforcement ${yellow('OFF')} — PreToolUse + PostToolUse hooks removed (Claude Code + Codex).\n` : `\n  Gate enforcement was not on.\n`);
     return;
   }
   // status
   const applied = amb.preToolGateApplied();
-  console.log(`\n  Gate enforcement: ${applied ? green('ON') : g('off')} ${g('(Claude Code PreToolUse + PostToolUse)')}`);
+  const codexApplied = amb.codexGateApplied();
+  console.log(`\n  Gate enforcement: Claude Code ${applied ? green('ON') : g('off')} · Codex ${codexApplied ? green('ON') : g('off')}`);
   console.log(`  ${g('Turn on:')} phewsh gate enforce on   ${g('· off:')} phewsh gate enforce off`);
-  console.log(`  ${g('Before: deny writes to protected paths (.env, keys, .git/…),')}`);
-  console.log(`  ${g('ask before high-blast-radius shell (rm -rf, force-push, sudo…).')}`);
+  console.log(`  ${g('Deny always: catastrophic shell (rm -rf / ~ /Users…, disk erase, mkfs)')}`);
+  console.log(`  ${g('and writes to protected paths (.env, keys, .git/…).')}`);
+  console.log(`  ${g('Ask first (only when autonomy is manual/review/unset): rm -rf, force-push, sudo….')}`);
   console.log(`  ${g('After: redacted receipt of what ran — tool + target, never args or content.')}`);
   console.log(`  ${g('Opt-in, local-only, fail-open. Other tools: advisory only for now.')}\n`);
 }

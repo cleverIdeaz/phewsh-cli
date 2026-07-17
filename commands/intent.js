@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const { createPPS, writeGuardedViews } = require('../lib/pps');
 
 const os = require('os');
@@ -44,9 +44,9 @@ function createPrompter() {
 function openWeb() {
   console.log(`\n  Opening ${WEB_URL} ...\n`);
   try {
-    if (process.platform === 'darwin') execSync(`open "${WEB_URL}"`);
-    else if (process.platform === 'win32') execSync(`start "${WEB_URL}"`);
-    else execSync(`xdg-open "${WEB_URL}"`);
+    if (process.platform === 'darwin') execFileSync('open', [WEB_URL]);
+    else if (process.platform === 'win32') execFileSync('cmd', ['/c', 'start', '', WEB_URL]);
+    else execFileSync('xdg-open', [WEB_URL]);
   } catch {
     console.log(`  Could not open browser. Visit: ${WEB_URL}\n`);
   }

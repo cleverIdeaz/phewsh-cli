@@ -35,7 +35,15 @@ const HOOK_PRETOOL = { type: 'command', command: 'phewsh hook pre-tool' };
 // redacted breadcrumb (tool + target, never args/content). Installed and
 // removed together with the pre-tool gate — one toggle, whole lifecycle.
 const HOOK_POSTTOOL = { type: 'command', command: 'phewsh hook post-tool' };
+// Bash IS gated pre-tool: the policy's catastrophic tier hard-denies (never
+// prompts, so auto mode flows) and its ask tier is autonomy-gated. The old
+// "drop Bash to unblock auto mode" fix is superseded by that split.
 const PRETOOL_MATCHER = 'Write|Edit|MultiEdit|NotebookEdit|Bash';
+const POSTTOOL_MATCHER = 'Write|Edit|MultiEdit|NotebookEdit|Bash';
+// Codex (0.144+) reads the same hook shape — matcher + command entries per
+// lifecycle event — from ~/.codex/hooks.json. One policy, two harnesses.
+const CODEX_DIR = path.join(os.homedir(), '.codex');
+const CODEX_HOOKS = path.join(CODEX_DIR, 'hooks.json');
 
 // ANSI helpers (256-color per cli/lib/ui.js palette rules)
 const b = (s) => `\x1b[1m${s}\x1b[0m`;
@@ -107,40 +115,94 @@ function removeClaudeHooks() {
 }
 
 // ── Decision Gate enforcement (PreToolUse) — opt-in, reversible ──────────────
+// One policy, two harnesses: the same hook entries go into Claude Code's
+// settings.json and Codex's hooks.json (same schema). Foreign hooks in
+// either file are always preserved.
 function preToolGateApplied() {
   const s = loadClaudeSettings();
   return !!s && hasHook(s, 'PreToolUse', HOOK_PRETOOL.command);
 }
 
-function enablePreToolGate() {
-  const settings = loadClaudeSettings() || {};
-  settings.hooks = settings.hooks || {};
+function codexGateApplied() {
+  try {
+    const s = JSON.parse(fs.readFileSync(CODEX_HOOKS, 'utf-8'));
+    return hasHook(s, 'PreToolUse', HOOK_PRETOOL.command);
+  } catch { return false; }
+}
+
+// Add/repair phewsh gate entries in a { hooks: { <event>: [...] } } container
+// (the shape both harnesses share). Existing entries get their matcher
+// normalized to the current canonical one — that's the upgrade path for
+// installs from older phewsh versions.
+function applyGateHooks(container) {
+  container.hooks = container.hooks || {};
   let changed = false;
-  for (const [event, hook] of [['PreToolUse', HOOK_PRETOOL], ['PostToolUse', HOOK_POSTTOOL]]) {
-    settings.hooks[event] = settings.hooks[event] || [];
-    if (hasHook(settings, event, hook.command)) continue;
-    settings.hooks[event].push({ matcher: PRETOOL_MATCHER, hooks: [hook] });
+  for (const [event, hook, matcher] of [['PreToolUse', HOOK_PRETOOL, PRETOOL_MATCHER], ['PostToolUse', HOOK_POSTTOOL, POSTTOOL_MATCHER]]) {
+    container.hooks[event] = container.hooks[event] || [];
+    const existing = container.hooks[event].filter(e => (e.hooks || []).some(h => h.command === hook.command));
+    if (existing.length > 0) {
+      for (const entry of existing) {
+        if (entry.matcher !== matcher) {
+          entry.matcher = matcher;
+          changed = true;
+        }
+      }
+      continue;
+    }
+    container.hooks[event].push({ matcher, hooks: [hook] });
     changed = true;
   }
-  if (changed) fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
+  return changed;
+}
+
+function removeGateHooks(container) {
+  if (!container?.hooks) return false;
+  let changed = false;
+  for (const [event, hook] of [['PreToolUse', HOOK_PRETOOL], ['PostToolUse', HOOK_POSTTOOL]]) {
+    const entries = container.hooks[event];
+    if (!entries) continue;
+    const before = entries.length;
+    container.hooks[event] = entries
+      .map(e => ({ ...e, hooks: (e.hooks || []).filter(h => h.command !== hook.command) }))
+      .filter(e => e.hooks.length > 0);
+    if ((container.hooks[event] || []).length === 0) delete container.hooks[event];
+    if (before !== (container.hooks[event]?.length ?? 0)) changed = true;
+  }
+  return changed;
+}
+
+function enablePreToolGate() {
+  let changed = false;
+  const settings = loadClaudeSettings() || {};
+  if (applyGateHooks(settings)) {
+    fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
+    changed = true;
+  }
+  if (fs.existsSync(CODEX_DIR)) {
+    let codex = {};
+    try { codex = JSON.parse(fs.readFileSync(CODEX_HOOKS, 'utf-8')) || {}; } catch { /* first install */ }
+    if (applyGateHooks(codex)) {
+      fs.writeFileSync(CODEX_HOOKS, JSON.stringify(codex, null, 2));
+      changed = true;
+    }
+  }
   return changed;
 }
 
 function disablePreToolGate() {
-  const settings = loadClaudeSettings();
-  if (!settings?.hooks) return false;
   let changed = false;
-  for (const [event, hook] of [['PreToolUse', HOOK_PRETOOL], ['PostToolUse', HOOK_POSTTOOL]]) {
-    const entries = settings.hooks[event];
-    if (!entries) continue;
-    const before = entries.length;
-    settings.hooks[event] = entries
-      .map(e => ({ ...e, hooks: (e.hooks || []).filter(h => h.command !== hook.command) }))
-      .filter(e => e.hooks.length > 0);
-    if ((settings.hooks[event] || []).length === 0) delete settings.hooks[event];
-    if (before !== (settings.hooks[event]?.length ?? 0)) changed = true;
+  const settings = loadClaudeSettings();
+  if (settings && removeGateHooks(settings)) {
+    fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
+    changed = true;
   }
-  if (changed) fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
+  try {
+    const codex = JSON.parse(fs.readFileSync(CODEX_HOOKS, 'utf-8'));
+    if (removeGateHooks(codex)) {
+      fs.writeFileSync(CODEX_HOOKS, JSON.stringify(codex, null, 2));
+      changed = true;
+    }
+  } catch { /* no codex hooks file — nothing to remove */ }
   return changed;
 }
 
@@ -374,7 +436,8 @@ async function ensureAuto() {
   // receipt) install with first-run auto-enable too — they're fail-open,
   // redacted, and removed by the same `phewsh ambient off` / `gate enforce off`.
   let gateApplied = false;
-  if (hasClaude) { try { gateApplied = enablePreToolGate(); } catch { /* best-effort */ } }
+  const hasCodex = installed.some(h => h.id === 'codex');
+  if (hasClaude || hasCodex) { try { gateApplied = enablePreToolGate(); } catch { /* best-effort */ } }
   const { written } = selfheal.syncGlobalBaseFiles();
   const slashWritten = slash.installSlashCommands().written;
   // Refresh existing project files only — first-run auto-enable must not dump
@@ -433,3 +496,4 @@ module.exports.ensureAuto = ensureAuto;
 module.exports.enablePreToolGate = enablePreToolGate;
 module.exports.disablePreToolGate = disablePreToolGate;
 module.exports.preToolGateApplied = preToolGateApplied;
+module.exports.codexGateApplied = codexGateApplied;

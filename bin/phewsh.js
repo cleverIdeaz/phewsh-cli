@@ -7,10 +7,15 @@ const command = args[0];
 // Must be instant and side-effect-free: print the banner, exit. No update
 // check, no network, no session. Intercepted before anything else loads.
 if (command === 'shim-preflight') {
-  try {
-    const bin = args[1] || 'tool';
-    process.stdout.write(require('../lib/shims').preflightBanner(bin) + '\n');
-  } catch { /* a broken banner must never delay the real tool */ }
+  // Machine-readable launches (Codex app-server JSONL, anything spawned with
+  // piped stdio) must get NOTHING on stdout — a banner corrupts the stream
+  // the parent parses. A human terminal has a TTY; everything else stays silent.
+  if (process.stdout.isTTY) {
+    try {
+      const bin = args[1] || 'tool';
+      process.stdout.write(require('../lib/shims').preflightBanner(bin) + '\n');
+    } catch { /* a broken banner must never delay the real tool */ }
+  }
   process.exit(0);
 }
 

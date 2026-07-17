@@ -339,13 +339,13 @@ async function main() {
 
   if (flags.clipboard) {
     try {
-      const { execSync } = require('child_process');
+      const { execFileSync } = require('child_process');
       if (process.platform === 'darwin') {
-        execSync('pbcopy', { input: content });
+        execFileSync('pbcopy', { input: content });
       } else if (process.platform === 'linux') {
-        execSync('xclip -selection clipboard', { input: content });
+        execFileSync('xclip', ['-selection', 'clipboard'], { input: content });
       } else {
-        execSync('clip', { input: content });
+        execFileSync('clip', { input: content });
       }
       console.log('\n  ✓ Copied to clipboard\n');
     } catch {

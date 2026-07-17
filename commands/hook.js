@@ -193,10 +193,14 @@ function sessionEnd() {
 }
 
 // Load the Decision Gate context (constraints + protected files) for the project
-// being worked in. Best-effort: missing/garbled → empty context (gate allows).
+// being worked in. Walks upward to the .intent/ root first — sessions started
+// in a subdirectory must inherit the same autonomy as the project root, or the
+// ask tier comes back for them. Best-effort: missing/garbled → empty context.
 function loadGateContext(cwd) {
   try {
-    const pj = JSON.parse(fs.readFileSync(path.join(cwd, '.intent', 'project.json'), 'utf-8'));
+    const { resolveProjectRoot } = require('../lib/sequencer/discover');
+    const root = resolveProjectRoot(cwd);
+    const pj = JSON.parse(fs.readFileSync(path.join(root, '.intent', 'project.json'), 'utf-8'));
     const dg = pj.decisionGate || {};
     return {
       constraints: dg.constraints || {},
@@ -223,6 +227,7 @@ function preTool() {
     const envelope = {
       toolName: payload.tool_name || payload.toolName,
       toolInput: payload.tool_input || payload.toolInput || {},
+      home: os.homedir(), // lets the pure policy match literal home-dir targets
       ...loadGateContext(cwd),
     };
     let result = { decision: 'allow', reason: '' };
