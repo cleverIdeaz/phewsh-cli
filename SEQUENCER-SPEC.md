@@ -350,7 +350,7 @@ Future compasses:
 
 1. **True tool interop**: Change your intent in Claude Code → `.cursorrules` auto-updates → Cursor knows too
 2. **Memory portability**: Claude's learned feedback about you becomes available to every tool
-3. **One-command setup**: Clone a repo, run `phewsh seq --all`, every AI tool is configured
+3. **One-command setup**: Clone a repo, run `phewsh seq --all`, compatible AI tools are configured
 4. **Compound intelligence**: Every session makes the context better, not just for one tool but all of them
 5. **Format-native output**: Each tool gets context in its own language, not a lowest-common-denominator dump
 

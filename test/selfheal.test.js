@@ -174,11 +174,32 @@ function tmpGitProject() {
   return { dir, git };
 }
 
-test('commitsSinceIntent: 0 when .intent/ is newer than every commit', () => {
+test('commitsSinceIntent: 0 when no commit follows the latest intent commit', () => {
   const { dir } = tmpGitProject();
-  // Bump .intent/ into the future — no commit postdates it.
-  setMtime(path.join(dir, '.intent', 'vision.md'), Date.now() + 5000);
   assert.equal(selfheal.commitsSinceIntent(dir), 0);
+});
+
+test('a commit that reconciles code and intent together is immediately current', () => {
+  const { dir, git } = tmpGitProject();
+  fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped');
+  fs.writeFileSync(path.join(dir, '.intent', 'status.md'), '# Status\nFeature shipped.\n');
+  git('add', '-A'); git('commit', '-qm', 'feat: ship with its record');
+
+  assert.equal(selfheal.commitsSinceIntent(dir), 0);
+  assert.equal(selfheal.wrapDraft(dir), null);
+});
+
+test('an uncommitted canonical intent update suppresses stale claims while reconciliation is active', () => {
+  const { dir, git } = tmpGitProject();
+  fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped');
+  git('add', '-A'); git('commit', '-qm', 'feat: ship before record');
+  fs.writeFileSync(path.join(dir, '.intent', 'next.json'), '{"version":1,"items":[]}\n');
+
+  assert.equal(selfheal.commitsSinceIntent(dir), 0);
+  const draft = selfheal.wrapDraft(dir);
+  assert.ok(draft);
+  assert.deepEqual(draft.commits, []);
+  assert.ok(draft.dirty.some(item => item.file === '.intent/next.json'));
 });
 
 test('commitsSinceIntent + wrapDraft: counts commits after the newest narrative file', () => {

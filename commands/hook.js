@@ -19,9 +19,8 @@ const AMBIENT_LOG = path.join(PHEWSH_DIR, 'ambient-sessions.jsonl');
 const DECISIONS_FILE = path.join(PHEWSH_DIR, 'outcomes', 'decisions.json');
 const INTENT_DIR = path.join(process.cwd(), '.intent');
 
-// "Where you left off, across every tool" — drawn from phewsh's own decision
-// record (not the host transcript). This is what makes opening Claude Code
-// standalone feel like resuming: it sees the thread Codex (or phewsh) left.
+// A local decision/outcome summary across recorded routes. This is not the host
+// transcript and must not imply that hidden tool memory crossed the boundary.
 function continuityBrief(project) {
   try {
     const decisions = JSON.parse(fs.readFileSync(DECISIONS_FILE, 'utf-8'));
@@ -29,7 +28,7 @@ function continuityBrief(project) {
     if (!line) return null;
     const tools = continuity.toolsInThread(decisions, { project });
     const span = tools >= 2 ? ` (${tools} tools, one thread)` : '';
-    return `Continuity${span}: you were ${line}. Nothing's lost — continue it.`;
+    return `Recorded continuity${span}: ${line}. The prior tool transcript did not carry; verify against project files.`;
   } catch { return null; }
 }
 
@@ -92,9 +91,9 @@ function maybeIntentInvitation() {
     fs.writeFileSync(nudgeFile, JSON.stringify(seen, null, 2));
     process.stdout.write([
       '# phewsh — one-time note for this project',
-      'This repo has no `.intent/` yet — no durable project truth that travels between AI tools.',
+      'This repo has no `.intent/` yet — no durable project truth for compatible tool adapters to read.',
       'If the user starts substantial (non-trivial) work here, offer ONCE, in plain language, to ground the project:',
-      '`phewsh clarify` (guided walk) or `phewsh init` (two questions) creates `.intent/` — vision, plan, and next steps that every AI tool reads, so the next session picks up where this one left off.',
+      '`phewsh clarify` (guided walk) or `phewsh init` (two questions) creates `.intent/` — vision, plan, and next steps that supported tools can read through native adapters. Prior tool transcripts still stay put.',
       'If they decline, or the work is trivial/exploratory, drop it and never raise it again. Do not create `.intent/` yourself uninvited.',
     ].join('\n') + '\n');
     appendBreadcrumb('intent-invite');
@@ -147,7 +146,7 @@ function sessionStart() {
     const { statusDrift } = require('../lib/truth');
     const drift = statusDrift(process.cwd());
     if (drift && drift.tracked && drift.commitsSince > 0) {
-      parts.push(`\n## ⚠ phewsh drift\n.intent/ is ${drift.commitsSince} commit(s) behind the code (since ${drift.lastCommit}) — its current-state claims may be stale. Good moment to reconcile so every tool inherits today's reality.`);
+      parts.push(`\n## ⚠ phewsh drift\n.intent/ is ${drift.commitsSince} commit(s) behind the code (since ${drift.lastCommit}) — its current-state claims may be stale. Good moment to reconcile so supported adapters can read today's record.`);
     }
   } catch { /* drift is a nicety; never break the host */ }
 

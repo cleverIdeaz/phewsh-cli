@@ -77,6 +77,33 @@ test('the canonical projection is deterministic and idempotent', () => {
   assert.ok(second.includes('Human header') && second.includes('Keep me.'), 'human content outside markers preserved');
 });
 
+test('canonical projection budget preserves current focus, Next criteria, and constraints together', () => {
+  const root = project();
+  fs.writeFileSync(path.join(root, '.intent', 'vision.md'), '# Vision\n' + 'Durable identity and architecture. '.repeat(190));
+  fs.writeFileSync(path.join(root, '.intent', 'status.md'), '# Status\n## Now\n**Current Focus:**\n- **Latest focus survives:** keep the active state visible.\n');
+  fs.writeFileSync(path.join(root, '.intent', 'next.json'), JSON.stringify({
+    version: 1,
+    items: [{
+      id: 'current',
+      title: 'Keep the full operating contract visible',
+      state: 'now',
+      updated: new Date().toISOString(),
+      criteria: Array.from({ length: 12 }, (_, index) => ({
+        expected: `criterion ${index + 1} remains visible with enough explanatory text to exercise the projection budget`,
+        type: 'measurable',
+        accepted: true,
+      })),
+    }],
+  }));
+  fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# Claude\n');
+
+  selfheal.syncContextFiles({ cwd: root, targets: ['CLAUDE.md'] });
+  const written = fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8');
+  assert.match(written, /Latest focus survives/);
+  assert.match(written, /criterion 12 remains visible/);
+  assert.match(written, /Budget: \$10/);
+});
+
 test('writing the projection from a nested dir targets the project-root CLAUDE.md', () => {
   const root = project();
   const nested = path.join(root, 'pkg');

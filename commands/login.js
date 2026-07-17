@@ -37,6 +37,18 @@ async function main() {
       console.log(`  Synced     ${config.supabaseUserId ? '✓ cloud sync enabled' : '✗ local only'}`);
       console.log(`  API key    ${config.apiKey ? config.apiKey.slice(0, 8) + '...' : '(not set)'}`);
       console.log(`  Provider   ${config.defaultProvider || 'anthropic'}`);
+      // Verified state over assumptions: a stored token is not a live session.
+      const { decodeExpiry } = require('../lib/mcp-token');
+      const mins = config.supabaseAccessToken ? decodeExpiry(config.supabaseAccessToken) : null;
+      if (!config.supabaseAccessToken) {
+        console.log('  Session    (no cloud session)');
+      } else if (mins === null) {
+        console.log('  Session    ? unreadable token — run `phewsh login --logout` then `phewsh login`');
+      } else if (mins <= 0) {
+        console.log(`  Session    ✗ expired${config.supabaseRefreshToken ? ' (may auto-refresh on next cloud call)' : ''} — if cloud sync fails, run \`phewsh login --logout\` then \`phewsh login\``);
+      } else {
+        console.log(`  Session    ✓ valid ~${mins} more min`);
+      }
       console.log('');
     }
     return;

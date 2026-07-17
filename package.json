@@ -1,7 +1,7 @@
 {
   "name": "phewsh",
-  "version": "0.15.82",
-  "description": "One mission. Many AI tools. No lost context. PHEWSH keeps your project's intent, decisions, and working context aligned across Claude Code, Codex, Cursor, Gemini and your team \u2014 so the next AI knows what the last one learned.",
+  "version": "0.15.83",
+  "description": "The next AI starts from your files. PHEWSH keeps project truth portable across Claude Code, Codex, Cursor, Gemini, and your team — with visible handoff receipts.",
   "bin": {
     "phewsh": "bin/phewsh.js"
   },
@@ -11,6 +11,11 @@
     "lib/",
     "mcp/",
     "skills/",
+    "docs/adapter-contract.json",
+    "docs/threat-model.md",
+    "docs/release-checklist.md",
+    "docs/handoff-proof.md",
+    "docs/handoff-proof-fixture.json",
     "README.md",
     "SECURITY.md",
     "LICENSE"

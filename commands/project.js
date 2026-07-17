@@ -46,7 +46,7 @@ function showList() {
   }
   console.log('');
   console.log(`  ${g('Registering never executes anything — work still starts only when a')}`);
-  console.log(`  ${g('human claims it. See phewsh.com/ion for the team room.')}`);
+  console.log(`  ${g('human explicitly claims the task. See phewsh.com/ion for the team room.')}`);
   console.log('');
 }
 
@@ -110,7 +110,7 @@ function main() {
     console.log(`    ${cyan('phewsh project remove <name|path>')} ${g('stop exposing a project')}`);
     console.log('');
     console.log(`  ${g('Safety: registering only affects visibility. Execution always requires')}`);
-    console.log(`  ${g('a human claim — nothing runs remotely because it was registered.')}`);
+    console.log(`  ${g('a human explicitly claims the task — nothing runs remotely because it was registered.')}`);
     console.log('');
     return;
   }

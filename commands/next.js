@@ -1,6 +1,6 @@
 // phewsh next — one of the four plain words (Project · Next · Work · Record).
 // A zero-AI "what should happen next?" list that lives in `.intent/next.json`,
-// so it travels with the repo and every AI tool reads the same list. Works
+// so it travels with the repo and compatible AI tools can read the same list. Works
 // for a human alone with no model in the loop — a thinking tool first.
 //
 //   phewsh next                 show NOW / NEXT / DONE + phewsh's suggestion

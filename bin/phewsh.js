@@ -63,7 +63,7 @@ function showBrand() {
   console.log('');
   console.log(`  ${b(w('█▀█ █░█ █▀▀ █░█░█ █▀ █░█'))}`);
   console.log(`  ${b(w('█▀▀ █▀█ ██▄ ▀▄▀▄▀ ▄█ █▀█'))}`);
-  console.log(`  ${g('Keep all your AI tools. phewsh is the one memory they share.')}`);
+  console.log(`  ${g('Keep all your AI tools. phewsh briefs them from one .intent/ folder you own.')}`);
   console.log('');
 
   // Context-aware hint
@@ -91,6 +91,8 @@ const COMMANDS = {
   link:    () => require('../commands/link'),
   sync:    () => require('../commands/sync').main('status'),
   login:   () => require('../commands/login'),
+  // `phewsh logout` = `phewsh login --logout` — the universal spelling.
+  logout:  () => { process.argv.splice(3, 0, '--logout'); return require('../commands/login'); },
   ai:      () => require('../commands/ai'),
   style:   () => require('../commands/style'),
   mbhd:    () => require('../commands/mbhd'),
@@ -138,13 +140,13 @@ function showHelp() {
   const pkg = require('../package.json');
   showBrand();
   console.log(`  ${g('v' + pkg.version)}  ·  ${g('phewsh.com/cli')}\n`);
-  console.log(`  ${g('Phewsh keeps work from getting lost — for you, and every AI tool you use.')}`);
+  console.log(`  ${g('Carry forward what was recorded. See exactly what was not.')}`);
   console.log('');
   console.log(`  ${b(w('the whole idea — four plain words'))}`);
   console.log(`    ${cyan('intent')}     ${g('PROJECT   what you\'re building & why')}`);
   console.log(`    ${cyan('next')}       ${g('NEXT      what should happen next — a zero-AI list')}`);
   console.log(`    ${cyan('work')}       ${g('WORK      what\'s happening now — at a glance')}`);
-  console.log(`    ${cyan('remember')}   ${g('RECORD    jot a decision so it sticks & travels')}`);
+  console.log(`    ${cyan('remember')}   ${g('RECORD    jot a decision so it stays in .intent/')}`);
   console.log(`    ${cyan('status')}     ${g('see all four at a glance')}`);
   console.log('');
   console.log(`  ${b(w('get started'))}`);
@@ -157,38 +159,38 @@ function showHelp() {
   console.log(`    ${cyan('gate')}       ${g('Set constraints (budget, time, skill, urgency)')}`);
   console.log(`    ${cyan('context')}    ${g('Export .intent/ for any AI tool')}`);
   console.log(`    ${cyan('status')}     ${g('git status for AI continuity — truth, record, drift, what\'s wired')}`);
-  console.log(`    ${cyan('next')}       ${g('What should happen next — a zero-AI list every tool reads')}`);
+  console.log(`    ${cyan('next')}       ${g('What should happen next — a zero-AI list compatible adapters read')}`);
   console.log(`    ${cyan('truth')}      ${g('Read-only audit: versions, Git, intent, projections, conflicts')}`);
   console.log(`    ${cyan('brief')}      ${g('Provider-ready briefing built from verified project truth')}`);
   console.log(`    ${cyan('ai')}         ${g('One-shot prompt with .intent/ context')}
     ${cyan('browse')}     ${g('Read any URL — AI summary in your terminal')}`);
   console.log('');
-  console.log(`  ${b(w('sync everywhere'))}`);
-  console.log(`    ${cyan('seq')}        ${g('Sequence all memory → optimal context for any agent')}`);
-  console.log(`    ${cyan('watch')}      ${g('Auto-sync .intent/ → native harness files + cloud')}`);
+  console.log(`  ${b(w('connect your tools'))}`);
+  console.log(`    ${cyan('seq')}        ${g('Compile project truth → native context for a chosen tool')}`);
+  console.log(`    ${cyan('watch')}      ${g('Auto-sync while running; signed-in cloud push unless --no-push')}`);
   console.log(`    ${cyan('push/pull')}  ${g('Manual sync to/from phewsh.com/intent')}`);
-  console.log(`    ${cyan('serve')}      ${g('Execution bridge — run from phewsh.com/ion or /intent')}`);
+  console.log(`    ${cyan('serve')}      ${g('Same-machine worker — project-bound, human-initiated claims')}`);
   console.log(`    ${cyan('project')}    ${g('Choose which projects this machine\'s worker shows on /ion')}`);
-  console.log(`    ${cyan('ion')}        ${g('Shared visual room for humans + local agents')}`);
-  console.log(`    ${cyan('mcp')}        ${g('Connect AI agents via MCP protocol')}`);
-  console.log(`    ${cyan('ambient')}    ${g('Continuity without launching phewsh — enhance your other tools')}`);
+  console.log(`    ${cyan('ion')}        ${g('Shared project room for humans + agents; request → review → Record')}`);
+  console.log(`    ${cyan('mcp')}        ${g('Optional bounded MCP adapter — no project truth or execution authority')}`);
+  console.log(`    ${cyan('ambient')}    ${g('Inspect or install reversible skills, hooks, and context adapters')}`);
   console.log(`    ${cyan('shim')}       ${g('Guaranteed launch banner — phewsh prints status before each tool')}`);
   console.log(`    ${cyan('pack')}       ${g('Opt-in workflow packs (Karpathy guidelines, GSD…) — attributed, reversible')}`);
   console.log(`    ${cyan('task')}       ${g('Shared tasks — request, claim, and ship teammate work via branch + PR')}
     ${cyan('dispatch')}   ${g('Friendly verb over task: dispatch "<title>" to request, <id>|next to claim')}
-    ${cyan('receipts')}   ${g('Proof trail — what agents actually did, with evidence')}`);
-  console.log(`    ${cyan('remember')}   ${g('Jot a decision to .intent/decisions.md — every tool inherits it')}`);
+    ${cyan('receipts')}   ${g('Proof trail — task evidence + cross-tool handoff receipts')}`);
+  console.log(`    ${cyan('remember')}   ${g('Jot a decision to .intent/decisions.md — supported tools can read it')}`);
   console.log(`    ${cyan('outcomes')}   ${g('Decision record — what was kept, reverted, or failed')}`);
   console.log(`    ${cyan('bypass')}     ${g('Went around phewsh? Record why — 10 seconds, no guilt')}`);
   console.log('');
   console.log(`  ${b(w('configure'))}`);
   console.log(`    ${cyan('feedback')}   ${g('Tell us what you need — prefilled GitHub issue; `feedback list` shows the queue')}`);
-  console.log(`    ${cyan('login')}      ${g('Identity + API key + cloud sync')}`);
+  console.log(`    ${cyan('login')}      ${g('Identity + API key + cloud sync — `logout` to sign out')}`);
   console.log(`    ${cyan('link')}       ${g('Link local .intent/ to cloud project')}`);
   console.log(`    ${cyan('update')}     ${g('Update phewsh — or `phewsh update auto on` to stay current automatically')}`);
   console.log('');
-  console.log(`  ${g('Works in: Claude Code · Cursor · ChatGPT · any MCP agent')}`);
-  console.log(`  ${g('No account needed. Account adds sync + sharing.')}`);
+  console.log(`  ${g('Works with: Claude Code · Codex · Cursor · Gemini · compatible MCP clients')}`);
+  console.log(`  ${g('No account needed for local truth. An account adds explicit cloud sync + Ion rooms.')}`);
   console.log('');
 }
 
@@ -254,12 +256,11 @@ async function maybeFirstRunIntro() {
   } catch { /* the intro is a nicety — never let it block the session */ }
 }
 
-// Always-on, frictionless: on the first interactive use, auto-enable ambient
-// across every installed harness (unless the user opted out); on every run
-// after, self-heal so each tool's context files are present and fresh. All
-// best-effort and non-blocking — a launch must never wait on or fail from this.
+// Once a user has explicitly enabled native adapters, keep their existing
+// marked context blocks fresh. A bare launch never installs skills or hooks;
+// first-run setup is offered by the intro and `phewsh ambient on` previews the
+// exact files before asking for consent.
 async function ambientSelfHeal() {
-  try { await require('../commands/ambient').ensureAuto(); } catch { /* never block launch */ }
   // Refresh-only: keep already-present context files fresh, but never CREATE
   // them just because phewsh was opened here — that would dirty a clean repo.
   try { require('../lib/selfheal').syncContextFiles({ createMissing: false }); } catch { /* never block launch */ }

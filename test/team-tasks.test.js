@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeRemote, taskBranch, buildTaskPrompt, proposedOutcome } = require('../lib/team-tasks');
+const { normalizeRemote, taskBranch, taskLookupQuery, changedPathsFromPorcelain, buildTaskPrompt, proposedOutcome } = require('../lib/team-tasks');
 
 test('normalizeRemote handles ssh, https, .git, and case', () => {
   assert.equal(normalizeRemote('git@github.com:Owner/Repo.git'), 'github.com/owner/repo');
@@ -21,6 +21,34 @@ test('taskBranch is deterministic, slugged, and capped', () => {
   assert.equal(taskBranch(id, '???'), 'phewsh/a1b2c3d4-task');
 });
 
+test('task lookup never falls through to a different cloud project', () => {
+  const project = '11111111-1111-4111-8111-111111111111';
+  const task = '22222222-2222-4222-8222-222222222222';
+  assert.equal(taskLookupQuery(project, task), `project_id=eq.${project}&id=eq.${task}&select=*`);
+  assert.equal(taskLookupQuery(project, '22222222'), `project_id=eq.${project}&id=like.22222222*&select=*`);
+  assert.throws(() => taskLookupQuery(project, '22222222&project_id=neq.' + project), /Task id must/);
+  assert.throws(() => taskLookupQuery(project, '2222'), /Task id must/);
+  assert.throws(() => taskLookupQuery(project, '22222222-'), /Task id must/);
+});
+
+test('changedPathsFromPorcelain records git paths without inventing changes', () => {
+  const out = [
+    ' M src/login flow.js',
+    'R  new-name.js', 'old-name.js',
+    '?? docs/proof.md',
+    '?? docs/proof.md',
+    '?? literal -> arrow.js',
+    '',
+  ].join('\0');
+  assert.deepEqual(changedPathsFromPorcelain(out), [
+    'src/login flow.js',
+    'new-name.js',
+    'docs/proof.md',
+    'literal -> arrow.js',
+  ]);
+  assert.deepEqual(changedPathsFromPorcelain(''), []);
+});
+
 test('buildTaskPrompt includes the objective and the isolation guardrails', () => {
   const p = buildTaskPrompt({ title: 'Add validation', packet: { objective: 'Validate emails on signup' } });
   assert.ok(p.includes('Add validation'));
@@ -34,6 +62,8 @@ test('proposedOutcome is provisional and carries provenance', () => {
     task: { id: 't1', title: 'Add validation', created_by: 'u-req', claimed_by: 'u-claim', packet: { verification: ['tests pass'] } },
     harnessId: 'claude-code',
     host: 'machine-x',
+    branch: 'phewsh/t1-add-validation',
+    changedFiles: ['src/validation.js', '.intent/work/task-t1.json'],
     startedAt: '2026-07-02T00:00:00Z',
     finishedAt: '2026-07-02T00:05:00Z',
   });
@@ -43,6 +73,10 @@ test('proposedOutcome is provisional and carries provenance', () => {
   assert.equal(o.executed_by.user, 'u-claim');
   assert.equal(o.executed_by.harness, 'claude-code');
   assert.deepEqual(o.verification, ['tests pass']);
+  assert.equal(o.evidence.branch, 'phewsh/t1-add-validation');
+  assert.deepEqual(o.evidence.changed_files, ['src/validation.js', '.intent/work/task-t1.json']);
+  assert.equal(o.evidence.changed_file_count, 2);
+  assert.deepEqual(o.evidence.tests, { status: 'not_recorded', requested: ['tests pass'] });
   assert.ok(o.note.includes('merge'), 'must explain it becomes authoritative only on merge');
 });
 

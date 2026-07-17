@@ -27,7 +27,9 @@ test('intro renders mark, promise, logo, and next step', async () => {
   const t = c.text();
   for (const l of FACE) assert.ok(c.lines.some((x) => x.includes(l)), 'face row present');
   for (const l of LOGO) assert.ok(c.lines.some((x) => x.includes(l)), 'logo line present');
-  assert.match(t, /one memory they share/);
+  assert.match(t, /one \.intent\/ folder you own/);
+  assert.match(t, /Adapters stay off until you choose/);
+  assert.match(t, /phewsh ambient on.*previews exact files and asks first/);
   assert.match(t, /phewsh setup/);
 });
 
@@ -49,6 +51,7 @@ test('found tools light up with their roles and a count', async () => {
   assert.match(t, /Claude Code/);
   assert.match(t, /reviews/);
   assert.match(t, /Found 3 tools/);
+  assert.match(t, /removable native adapters/);
 });
 
 test('no tools found shows the install nudge, not a fake count', async () => {
@@ -93,7 +96,7 @@ test('project discovery beat: existing projects and candidates, with counts', as
   assert.equal(res.projectsFound, 2);
   assert.equal(res.candidatesFound, 1);
   const t = c.text();
-  assert.match(t, /2 projects already share memory/);
+  assert.match(t, /2 projects already have shared truth/);
   assert.match(t, /1 likely candidate \(git, no \.intent yet\)/);
   assert.match(t, /run phewsh inside one/);
 });

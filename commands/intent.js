@@ -335,7 +335,7 @@ function showHelp() {
     plan.md     — How to get there, in what order
     next.md     — What to do right now (executable checklist)
 
-  These work with any AI coding tool. Your context travels with the project.
+  These files stay with the project; native adapters can brief compatible AI tools.
   `);
 }
 

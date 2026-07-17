@@ -28,6 +28,13 @@ test('measurable file check: pass when present, fail when absent', () => {
   assert.equal(verify.verifyCriterion({ expected: 'missing exists', type: 'measurable', check: { kind: 'file', path: 'nope.txt' } }, d).status, 'fail');
 });
 
+test('legacy exists check remains portable and evaluates as a file check', () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, 'legacy.txt'), 'still here');
+  assert.equal(verify.verifyCriterion({ expected: 'legacy file exists', type: 'measurable', check: { kind: 'exists', path: 'legacy.txt' } }, d).status, 'pass');
+  assert.equal(verify.verifyCriterion({ expected: 'missing legacy file', type: 'measurable', check: { kind: 'exists', path: 'missing.txt' } }, d).status, 'fail');
+});
+
 test('contains check: pass / partial / fail', () => {
   const d = tmp();
   fs.writeFileSync(path.join(d, 'a.md'), 'hello world');

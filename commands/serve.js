@@ -52,7 +52,8 @@ function currentProject() {
 // Harness runners — shared table in lib/harnesses.js. PHEWSH is not a
 // harness; it's the layer that dispatches to whichever harnesses you have.
 // Detection is honest: a runtime is only "connected" if its binary is on PATH.
-const { HARNESSES: RUNNERS, isInstalled } = require('../lib/harnesses');
+const { HARNESSES: RUNNERS, isInstalled, listHarnesses } = require('../lib/harnesses');
+const { resolveLocalClaim, claimCommand, LocalClaimError, linkedCloudProjectId } = require('../lib/local-claim');
 
 function detectRuntimes() {
   const runtimes = [];
@@ -74,6 +75,7 @@ const { gatherReceipts, recordSessionEvent, recordResultFile } = require('../lib
 const { serveProjects } = require('../lib/projects-index');
 
 const jobs = new Map();
+const claimRuns = new Map();
 
 function createJob(actionId, runtimeId, packet) {
   const jobId = crypto.randomUUID();
@@ -205,6 +207,35 @@ async function executeViaHarness(job, packet, runner) {
   });
 }
 
+// The browser click starts the existing task-claim lifecycle in the repo that
+// was resolved from a cloud id + explicit local registry entry + live origin.
+// No task prompt or directory from the browser is ever used as an exec target.
+function startLocalClaim(claim) {
+  const key = `${claim.projectId}:${claim.taskId}`;
+  if (claimRuns.has(key)) throw new LocalClaimError('This task is already being claimed on this machine.', 409);
+
+  const claimId = crypto.randomUUID();
+  const binPath = path.join(__dirname, '..', 'bin', 'phewsh.js');
+  const child = spawn(process.execPath, claimCommand(binPath, claim), {
+    cwd: claim.project.path,
+    stdio: 'inherit',
+    env: { ...process.env },
+    windowsHide: true,
+  });
+  claimRuns.set(key, { claimId, child });
+  recordSessionEvent(claim.runtimeId || 'default-route', 'ion', 'local_claim_requested', {
+    claimId,
+    taskId: claim.taskId,
+  });
+  const finish = (message) => {
+    claimRuns.delete(key);
+    if (message) console.log(`  ${g(message)}`);
+  };
+  child.once('exit', (code) => finish(`Ion claim ${claim.taskId.slice(0, 8)} exited ${code}`));
+  child.once('error', (error) => finish(`Ion claim ${claim.taskId.slice(0, 8)} could not start: ${error.message}`));
+  return claimId;
+}
+
 // ─── HTTP Server ───────────────────────────────────────────────────────────
 
 function parseBody(req) {
@@ -266,11 +297,33 @@ function main() {
       return json(req, res, {
         status: 'ok',
         project: currentProject(),
-        projects: serveProjects().map(p => ({ name: p.name, remote: p.remote })),
+        projects: serveProjects().map((p) => {
+          const cloudProjectId = linkedCloudProjectId(p.path);
+          return { name: p.name, remote: p.remote, ...(cloudProjectId ? { cloudProjectId } : {}) };
+        }),
         runtimes: detectRuntimes(),
         version: require('../package.json').version,
         uptime: process.uptime(),
       });
+    }
+
+    // Explicit same-machine claim. The HTTPS room can reach only the viewer's
+    // own loopback worker; the worker independently resolves the cloud project
+    // to a deliberately registered repo and re-verifies its live origin before
+    // delegating to the existing isolated branch/PR task path.
+    if (url.pathname === '/claim' && req.method === 'POST') {
+      try {
+        const body = await parseBody(req);
+        const installed = listHarnesses()
+          .filter((harness) => harness.installed && harness.headless)
+          .map((harness) => harness.id);
+        const claim = resolveLocalClaim(body, serveProjects(), installed);
+        const claimId = startLocalClaim(claim);
+        console.log(`  ${cyan('→')} Human-approved Ion claim ${claim.taskId.slice(0, 8)} in ${claim.project.name}`);
+        return json(req, res, { claimId, status: 'accepted' }, 202);
+      } catch (error) {
+        return json(req, res, { error: error.message }, error.status || 400);
+      }
     }
 
     // Dispatch a task
@@ -346,7 +399,8 @@ function main() {
     if (url.pathname === '/receipts' && req.method === 'GET') {
       const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 200);
       const project = url.searchParams.get('project') || null;
-      return json(req, res, gatherReceipts({ project, limit }));
+      const kind = url.searchParams.get('kind') || null;
+      return json(req, res, gatherReceipts({ project, kind, limit, publicView: true, cwd: process.cwd() }));
     }
 
     // Check job status
@@ -400,7 +454,7 @@ function main() {
     console.log(`  ${g('Live execution bridge for phewsh.com/ion and phewsh.com/intent')}`);
     console.log('');
     console.log(`  ${green('●')} Running on ${w(`http://localhost:${port}`)}`);
-    console.log(`  ${g('Web cockpit:')} ${w('phewsh.com/cockpit')} ${g('— mirrors this machine live')}`);
+    console.log(`  ${g('Web cockpit:')} ${w('phewsh.com/cockpit')} ${g('— shows this machine while the local bridge runs')}`);
     console.log('');
     console.log(`  ${b('Connected runtimes:')}`);
     runtimes.forEach(r => {

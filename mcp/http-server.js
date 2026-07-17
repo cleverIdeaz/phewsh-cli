@@ -25,18 +25,19 @@
 import { createServer } from "http";
 import { URL } from "url";
 
-import { readFileSync, readdirSync } from "fs";
+import { readFileSync } from "fs";
 import { join } from "path";
 import corsPolicy from "../lib/cors.js";
+import receiptsData from "../lib/receipts-data.js";
 
 import {
   loadProjects, recordResult, recordSession, updateLocalStatusMd,
-  SESSIONS_DIR, RESULTS_DIR,
 } from "./lib/handlers.js";
 import * as runtimes from "./lib/runtime-registry.js";
 import * as queue from "./lib/dispatch-queue.js";
 
 const { corsHeaders, isAllowedRequest } = corsPolicy;
+const { gatherReceipts } = receiptsData;
 
 // Version comes from the phewsh package this server ships inside — never hardcode it.
 const VERSION = (() => {
@@ -147,72 +148,13 @@ function handleResult(req, res, jobId) {
 }
 
 function handleReceipts(req, res, url) {
-  // The merged proof trail: every claim an agent made, with the evidence file
-  // behind it. Same data `phewsh receipts` shows in the terminal — exposed
-  // here so the web app can render it.
+  // The web gets the same merged trail, but handoff events are deliberately
+  // redacted to counts/verdicts/routes. Full paths and hashes stay in the 0600
+  // local receipt and are available only through the local CLI.
   const limit = Math.min(parseInt(url.searchParams.get("limit") || "50", 10), 200);
   const projectFilter = url.searchParams.get("project") || null;
-  const events = [];
-
-  const safeJson = (file, fallback) => {
-    try { return JSON.parse(readFileSync(file, "utf-8")); } catch { return fallback; }
-  };
-  const safeList = (dir) => { try { return readdirSync(dir); } catch { return []; } };
-
-  for (const f of safeList(SESSIONS_DIR)) {
-    if (!f.endsWith("_sessions.json")) continue;
-    for (const s of safeJson(join(SESSIONS_DIR, f), [])) {
-      events.push({ ts: s.timestamp, project: s.projectId, agent: s.agentId, kind: s.event, data: s, receipt: `sessions/${f}` });
-    }
-  }
-  for (const f of safeList(RESULTS_DIR)) {
-    if (!f.endsWith(".json")) continue;
-    const r = safeJson(join(RESULTS_DIR, f), null);
-    if (!r) continue;
-    events.push({
-      ts: r.reportedAt || r.flaggedAt, project: r.projectId, agent: r.agentId,
-      kind: r.type === "blocker" ? "blocker_record" : "result_record",
-      data: r, receipt: `results/${f}`,
-    });
-  }
-  for (const j of queue.list({ limit: 200 })) {
-    const { packet, ...rest } = j;
-    events.push({
-      ts: j.updatedAt || j.createdAt, project: "web", agent: j.runtimeId,
-      kind: `job_${j.status}`, data: { ...rest, summary: packet?.objective?.task?.slice(0, 140) || null },
-      receipt: "bridge/jobs.json",
-    });
-  }
-
-  let filtered = events.filter(e => e.ts);
-
-  // A completion leaves two records: a task_complete session event and a
-  // richer result_record file. Drop the session twin so completions aren't
-  // double-counted (same rule as `phewsh receipts` in the CLI).
-  filtered = filtered.filter(e => {
-    if (e.kind !== "task_complete") return true;
-    return !filtered.some(r => r.kind === "result_record"
-      && r.data.taskId === e.data.taskId
-      && Math.abs(new Date(r.ts) - new Date(e.ts)) < 5000);
-  });
-
-  if (projectFilter) filtered = filtered.filter(e => e.project === projectFilter);
-  filtered.sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
-
-  const counts = { completed: 0, failed: 0, blocked: 0, gated: 0, dispatched: 0 };
-  for (const e of filtered) {
-    if (e.kind === "result_record" || e.kind === "task_complete") {
-      e.data.success === false ? counts.failed++ : counts.completed++;
-    }
-    if (e.kind === "blocker_record" || e.kind === "blocker_flagged") counts.blocked++;
-    if (e.kind === "action_evaluated") counts.gated++;
-    if (e.kind === "dispatch_enqueued") counts.dispatched++;
-  }
-
-  json(req, res, 200, {
-    summary: { ...counts, totalEvents: filtered.length },
-    events: filtered.slice(0, limit),
-  });
+  const kindFilter = url.searchParams.get("kind") || null;
+  json(req, res, 200, gatherReceipts({ project: projectFilter, kind: kindFilter, limit, publicView: true, cwd: process.cwd() }));
 }
 
 function handleJobsList(req, res, url) {

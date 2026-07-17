@@ -3,11 +3,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { execFileSync, spawn } = require('node:child_process');
 
 function waitForOutput(child, output, pattern, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`Timed out waiting for ${pattern}`)), timeoutMs);
+    const timeout = setTimeout(() => reject(new Error(
+      `Timed out waiting for ${pattern}\nOutput tail:\n${output.text.slice(-1200)}`,
+    )), timeoutMs);
     const check = () => {
       if (!pattern.test(output.text)) return;
       clearTimeout(timeout);
@@ -34,6 +36,56 @@ function waitForFileLines(file, count, timeoutMs = 5000) {
     poll();
   });
 }
+
+test('fresh session names concrete continuity, transport, and transcript boundaries', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-first-contact-'));
+  const home = path.join(root, 'home');
+  const project = path.join(root, 'project');
+  const bin = path.join(root, 'bin');
+  fs.mkdirSync(path.join(home, '.phewsh'), { recursive: true });
+  fs.mkdirSync(project, { recursive: true });
+  fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(path.join(home, '.phewsh', 'config.json'), JSON.stringify({
+    defaultRoute: 'claude-code',
+    fallback: 'ask',
+  }));
+  fs.writeFileSync(path.join(bin, 'claude'), `#!${process.execPath}\nconsole.log('UNUSED');\n`);
+  fs.chmodSync(path.join(bin, 'claude'), 0o755);
+  execFileSync('git', ['init', '-q'], { cwd: project });
+
+  const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'phewsh.js')], {
+    cwd: project,
+    env: {
+      ...process.env,
+      HOME: home,
+      PATH: `${bin}:/usr/bin:/bin`,
+      NO_COLOR: '1',
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const output = { text: '' };
+  child.stdout.on('data', chunk => { output.text += chunk; });
+  child.stderr.on('data', chunk => { output.text += chunk; });
+
+  try {
+    await waitForOutput(child, output, /What are you trying to do\?/);
+    child.stdin.write('/quit\n');
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Session did not exit')), 5000);
+      child.on('exit', () => { clearTimeout(timeout); resolve(); });
+    });
+
+    assert.match(output.text, /no \.intent\/ yet/);
+    assert.match(output.text, /explicit cloud sync \+ Ion/);
+    assert.match(output.text, /Git repo · no commits yet/);
+    assert.match(output.text, /\/remember writes \.intent\/decisions\.md · routes leave local receipts/);
+    assert.match(output.text, /prior tool transcripts stay put/);
+    assert.doesNotMatch(output.text, /no memory yet|context travels|mirrors this|starts logging/i);
+  } finally {
+    if (!child.killed) child.kill('SIGTERM');
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('session coalesces pasted lines and blank input has no outcome side effect', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-session-'));
@@ -529,8 +581,13 @@ fs.appendFileSync(${JSON.stringify(claudeArgsFile)}, JSON.stringify(process.argv
     const claudeArgs = JSON.parse(fs.readFileSync(claudeArgsFile, 'utf-8').trim());
     assert.match(codexArgs.join(' '), /Working tree: clean/);
     assert.match(codexArgs.join(' '), /from-codex\.txt exists/);
+    assert.match(codexArgs.join(' '), /Handoff: h-[a-f0-9]+ verified/);
+    assert.match(codexArgs.join(' '), /Not carried: conversation transcript, model reasoning/);
+    assert.match(codexArgs.join(' '), /Receipts: .*; 1 handoff\(s\)/);
     assert.match(claudeArgs.join(' '), /Working tree: \d+ changed path\(s\), uncommitted/);
     assert.match(claudeArgs.join(' '), /from-codex\.txt exists/);
+    assert.match(claudeArgs.join(' '), /Handoff: h-[a-f0-9]+ verified/);
+    assert.match(claudeArgs.join(' '), /Receipts: .*; 2 handoff\(s\)/);
     assert.deepEqual(claudeArgs.slice(0, 1), ['--append-system-prompt']);
     assert.match(fs.readFileSync(path.join(project, '.intent', 'next.md'), 'utf-8'), /Verification verdict: pass/);
     for (const file of ['CLAUDE.md', 'AGENTS.md', 'GEMINI.md', '.cursorrules']) {
@@ -540,6 +597,96 @@ fs.appendFileSync(${JSON.stringify(claudeArgsFile)}, JSON.stringify(process.argv
     assert.match(output.text, /Handoff ready/, 'exit renders the cross-harness handoff');
     const briefs = fs.readdirSync(path.join(home, '.phewsh', 'briefs', 'project'));
     assert.equal(briefs.length, 3);
+    const handoffRoot = path.join(home, '.phewsh', 'handoffs');
+    const receiptFiles = fs.readdirSync(handoffRoot)
+      .flatMap(dir => fs.readdirSync(path.join(handoffRoot, dir)).map(file => path.join(handoffRoot, dir, file)));
+    assert.equal(receiptFiles.length, 3);
+    const handoffLib = require('../lib/handoff-receipt');
+    const triggers = [];
+    for (const file of receiptFiles) {
+      const receipt = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      triggers.push(receipt.trigger);
+      assert.equal(handoffLib.integrityValid(receipt), true);
+      assert.match(receipt.carried.brief.sha256, /^[a-f0-9]{64}$/);
+      assert.match(receipt.carried.brief.path, /^briefs\/project\//);
+      assert.equal(receipt.claims.length, 0, 'the receipt never invents a model claim');
+    }
+    assert.deepEqual(triggers.sort(), ['clean-exit', 'work-start', 'work-start']);
+  } finally {
+    if (!child.killed) child.kill('SIGTERM');
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('/council honors the active harness model without leaking it to other harnesses', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-council-model-'));
+  const home = path.join(root, 'home');
+  const project = path.join(root, 'project');
+  const bin = path.join(root, 'bin');
+  const claudeArgsFile = path.join(root, 'claude-args.json');
+  const codexArgsFile = path.join(root, 'codex-args.json');
+  fs.mkdirSync(path.join(home, '.phewsh'), { recursive: true });
+  fs.mkdirSync(path.join(project, '.intent'), { recursive: true });
+  fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(path.join(home, '.phewsh', 'config.json'), JSON.stringify({
+    defaultRoute: 'claude-code',
+    fallback: 'ask',
+  }));
+  fs.writeFileSync(path.join(project, '.intent', 'vision.md'), '# Vision\n');
+
+  fs.writeFileSync(path.join(bin, 'claude'), `#!${process.execPath}
+const fs = require('node:fs');
+fs.writeFileSync(${JSON.stringify(claudeArgsFile)}, JSON.stringify(process.argv.slice(2)));
+console.log('CLAUDE_COUNCIL');
+`);
+  fs.chmodSync(path.join(bin, 'claude'), 0o755);
+  fs.writeFileSync(path.join(bin, 'codex'), `#!${process.execPath}
+const fs = require('node:fs');
+fs.writeFileSync(${JSON.stringify(codexArgsFile)}, JSON.stringify(process.argv.slice(2)));
+console.log('CODEX_COUNCIL');
+`);
+  fs.chmodSync(path.join(bin, 'codex'), 0o755);
+
+  const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'phewsh.js')], {
+    cwd: project,
+    env: {
+      ...process.env,
+      HOME: home,
+      PATH: `${bin}:/usr/bin:/bin`,
+      NO_COLOR: '1',
+      PHEWSH_OFFLINE: '1',
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const output = { text: '' };
+  child.stdout.on('data', chunk => { output.text += chunk; });
+  child.stderr.on('data', chunk => { output.text += chunk; });
+
+  try {
+    await waitForOutput(child, output, /What are you trying to do\?/);
+    child.stdin.write('4\n');
+    await waitForOutput(child, output, /Describe it\./);
+    child.stdin.write('/model fable\n');
+    await waitForOutput(child, output, /validates it on your next message/);
+    child.stdin.write('/council pressure-test this handoff\n');
+    await waitForOutput(child, output, /council of 2/, 10000);
+    child.stdin.write('1\n');
+    await waitForOutput(child, output, /kept/);
+    child.stdin.write('/quit\n');
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Session did not exit')), 5000);
+      child.on('exit', code => {
+        clearTimeout(timeout);
+        assert.equal(code, 0);
+        resolve();
+      });
+    });
+
+    const claudeArgs = JSON.parse(fs.readFileSync(claudeArgsFile, 'utf-8'));
+    const codexArgs = JSON.parse(fs.readFileSync(codexArgsFile, 'utf-8'));
+    assert.deepEqual(claudeArgs.slice(-2), ['--model', 'fable']);
+    assert.equal(codexArgs.includes('fable'), false);
+    assert.deepEqual(codexArgs.slice(0, 2), ['exec', '--skip-git-repo-check']);
   } finally {
     if (!child.killed) child.kill('SIGTERM');
     fs.rmSync(root, { recursive: true, force: true });

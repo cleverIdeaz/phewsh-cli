@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PHEWSH CLI — .intent/ for every AI tool</title>
-  <meta name="description" content="One mission. Many AI tools. No lost context. The phewsh CLI turns what you're building into durable .intent/ project truth and carries it across Claude Code, Codex, Cursor, and Gemini. curl -fsSL phewsh.com/install.sh | sh.">
-  <meta property="og:title" content="PHEWSH CLI — .intent/ for every AI tool">
-  <meta property="og:description" content="Your project's working memory. Define it once in .intent/, every AI tool reads it.">
+  <title>PHEWSH CLI — .intent/ across compatible AI tools</title>
+  <meta name="description" content="The next AI starts from your files. The phewsh CLI carries durable .intent/ project truth across Claude Code, Codex, Cursor, and Gemini — with visible handoff receipts.">
+  <meta property="og:title" content="PHEWSH CLI — .intent/ across compatible AI tools">
+  <meta property="og:description" content="Your project's recorded truth. Define it in .intent/ and carry a bounded, verified brief across compatible AI tools.">
   <meta property="og:image" content="https://phewsh.com/assets/og/CLI.png">
   <meta property="og:url" content="https://phewsh.com/cli">
   <meta property="og:type" content="website">
@@ -112,10 +112,14 @@
     /* ─── INSTALL BAR ─── */
     .install-wrap {
       display: flex;
+      flex-direction: column;
+      align-items: center;
       justify-content: center;
       padding: 0 24px 12px;
       flex-shrink: 0;
     }
+    .install-wrap > p { width: 100%; max-width: 760px; }
+    .install-wrap > div:not(.code-block) { width: 100%; }
     .code-block {
       background: var(--bg-code);
       border: 1px solid var(--border);
@@ -481,6 +485,8 @@
     /* ─── RESPONSIVE ─── */
     @media (max-width: 720px) {
       .cards { grid-template-columns: 1fr; }
+      .packs { width: 100%; min-width: 0; padding: 0 24px; }
+      .packs > .cards { padding-left: 0; padding-right: 0; }
       .hero h2 { font-size: 22px; }
       .int-row { gap: 6px; }
       .int-badge { font-size: 10px; padding: 4px 10px; }
@@ -498,12 +504,12 @@
   <nav id="phewsh-platform-tabs" style="display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;padding:8px 16px;font-family:'Inter',-apple-system,sans-serif;font-size:12px;background:rgba(100,215,195,0.04);border-bottom:1px solid #1e2422;">
     <span style="color:#828e8a;letter-spacing:0.06em;margin-right:8px;">PHEWSH platform</span>
     <a data-path="/" href="/" title="Home" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">Home</a>
-    <a data-path="/demo" href="/demo" title="See it work — one budget across Claude, Cursor, local" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">How it works</a>
+    <a data-path="/demo" href="/demo" title="See a bounded Claude Code → Codex handoff and verify its receipt" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">How it works</a>
     <a data-path="/cli" href="/cli" title="The terminal front door — curl -fsSL phewsh.com/install.sh | sh" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">CLI</a>
     <a data-path="/platform" data-group="/platform,/cockpit,/mcp,/api" href="/platform" title="Docs — platform, cockpit, agents, API" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">Docs</a>
     <a data-path="/cli#packs" href="/cli#packs" title="Opt-in workflow packs — Karpathy, GSD…" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">Packs</a>
     <span style="color:#1e2422;margin:0 6px;">|</span>
-    <a href="/intent" title="The web workspace — parallel to the CLI, same projects, stays synced" style="color:#ffc391;text-decoration:none;padding:3px 10px;">Intent web app &#8599;</a>
+    <a href="/intent" title="Define project truth in the browser; terminal sync happens only when you push or pull" style="color:#ffc391;text-decoration:none;padding:3px 10px;">Intent web app &#8599;</a>
   </nav>
   <script>(function(){var p=location.pathname.replace(/\/+$/,'')||'/';document.querySelectorAll('#phewsh-platform-tabs a[data-path]').forEach(function(a){var g=(a.getAttribute('data-group')||'').split(',');if(a.getAttribute('data-path')===p||g.indexOf(p)>-1){a.style.color='#64d7c3';a.style.background='rgba(100,215,195,0.10)';a.style.fontWeight='600';}});})();</script>
 
@@ -539,9 +545,9 @@
   <!-- Hero -->
   <div class="hero">
     <div class="eyebrow">Continuity Layer</div>
-    <h2>Portable project context <em>for every AI tool.</em></h2>
+    <h2>Portable project context <em>across compatible AI tools.</em></h2>
     <p class="subtitle">One <code>.intent/</code> folder. Define success once, work in any native tool, verify what happened.</p>
-    <p class="soul-line">"One mission. Many AI tools. No lost context."</p>
+    <p class="soul-line">"One project. Many AI tools. Visible handoffs."</p>
   </div>
 
   <!-- Main install -->
@@ -553,13 +559,13 @@
     </div>
     <p style="text-align:center;font-size:11px;color:#777;margin:10px 0 0">Node-aware, nvm-aware, never sudo. No curl? Fallback: <code style="color:var(--accent);">npm install -g phewsh</code></p>
     <div style="max-width:640px;margin:14px auto 0;display:grid;gap:6px;">
-      <div class="code-block" style="font-size:11.5px;padding:8px 12px;" onclick="copy(this, 'curl -fsSL phewsh.com/install.sh | sh &amp;&amp; phewsh shim on &amp;&amp; phewsh ambient on')" title="Install + the front door on every AI tool you already have">
+      <div class="code-block" style="font-size:11.5px;padding:8px 12px;" onclick="copy(this, 'curl -fsSL phewsh.com/install.sh | sh &amp;&amp; phewsh shim on &amp;&amp; phewsh ambient on')" title="Install + the front door on supported AI tools already here">
         <span class="prompt">$</span><span class="cmd">&hellip; | sh &amp;&amp; phewsh shim on &amp;&amp; phewsh ambient on</span><span class="copy-btn">Copy</span>
       </div>
       <div class="code-block" style="font-size:11.5px;padding:8px 12px;" onclick="copy(this, 'curl -fsSL phewsh.com/install.sh | sh &amp;&amp; phewsh shim on &amp;&amp; phewsh ambient on &amp;&amp; phewsh pack install all')" title="Everything + the official vendored packs — opt-in, attributed, removable">
         <span class="prompt">$</span><span class="cmd">&hellip; &amp;&amp; phewsh pack install all</span><span class="copy-btn">Copy</span>
       </div>
-      <p style="text-align:center;font-size:10.5px;color:#666;margin:2px 0 0">Fuller setups: front door on every AI tool (shim + ambient) &middot; plus the official vendored packs. All reversible.</p>
+      <p style="text-align:center;font-size:10.5px;color:#666;margin:2px 0 0">Fuller setups: front door on supported AI tools (shim + ambient) &middot; plus the official vendored packs. All reversible.</p>
     </div>
     <p style="text-align:center;font-size:11px;color:#777;margin:8px 0 0">Local-first &amp; MIT. Read the source: <a href="https://github.com/cleverIdeaz/phewsh-cli" style="color:rgba(0,232,245,0.7);">github.com/cleverIdeaz/phewsh-cli</a> — what it reads, writes, and sends is documented in <a href="https://github.com/cleverIdeaz/phewsh-cli/blob/main/SECURITY.md" style="color:rgba(0,232,245,0.7);">SECURITY.md</a>. Something off? <code style="color:var(--accent);">phewsh feedback</code> files it publicly.</p>
     <p style="text-align:center;font-size:11px;color:#777;margin:8px 0 0">Then <code style="color:var(--accent);">phewsh pack</code> — one place to discover and adopt the best of what the community is building. <a href="#packs" style="color:rgba(0,232,245,0.7);">Browse the catalog ↓</a></p>
@@ -586,7 +592,7 @@
         <span><span class="cc-prompt">$</span><span class="cc-text">phewsh clarify</span></span>
         <span class="cc-copy">Copy</span>
       </div>
-      <p class="card-desc">A guided walk through the Intent Compass — your answers become <code>.intent/</code>, the project truth every tool reads. In a hurry? <code>phewsh init</code> is the two-question version.</p>
+      <p class="card-desc">A guided walk through the Intent Compass — your answers become <code>.intent/</code>, project truth supported tools read through native adapters. In a hurry? <code>phewsh init</code> is the two-question version.</p>
     </div>
 
     <!-- Watch -->
@@ -622,7 +628,7 @@
     <div class="section-label" style="text-align:center;">Packs</div>
     <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(1.3rem,3.4vw,1.9rem);letter-spacing:-0.02em;text-align:center;margin:8px auto 14px;">One continuity layer.<br><em style="color:var(--accent);font-style:normal;">Many schools of thought.</em></h2>
     <p style="font-size:0.96rem;line-height:1.7;color:rgba(255,255,255,0.72);text-align:center;max-width:600px;margin:0 auto 32px;">
-      phewsh's core is continuity — your project truth, shared across every AI tool. <strong>Packs</strong> are opt-in
+      phewsh's core is continuity — your project truth, shared across compatible AI tools. <strong>Packs</strong> are opt-in
       workflow opinions you layer on top: proven guidelines from people who've shipped. Always attributed,
       project-scoped, and reversible — nothing is written without your <code>y/N</code>.
     </p>
@@ -712,9 +718,10 @@
     <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(1.3rem,3.4vw,1.9rem);letter-spacing:-0.02em;text-align:center;margin:8px auto 14px;">Is phewsh a wrapper? <em style="color:var(--accent);font-style:normal;">No.</em><br>It's the layer <em style="font-style:italic;">above</em> your tools.</h2>
 
     <p style="font-size:0.96rem;line-height:1.7;color:rgba(255,255,255,0.72);text-align:center;max-width:600px;margin:0 auto 18px;">
-      In plain terms: you write down <em>what you're building</em> once, and every AI tool you
-      already use — Claude Code, Codex, Cursor, Gemini — reads it and stays on the same page.
-      You don't switch tools. You don't re-explain. They share one memory.
+      In plain terms: you write down <em>what you're building</em> once, and native adapters let supported AI tools you
+      already use — Claude Code, Codex, Cursor, Gemini — read the same project-owned record.
+      You can switch tools without changing the source of truth. Their capabilities and transcripts remain separate,
+      and each captured Phewsh handoff says what carried — and what did not.
     </p>
 
     <p style="font-size:0.84rem;line-height:1.7;color:rgba(255,255,255,0.55);text-align:center;max-width:640px;margin:0 auto 32px;">
@@ -746,19 +753,19 @@
     <div style="background:rgba(0,232,245,0.04);border:1px solid rgba(0,232,245,0.18);border-radius:6px;padding:22px 24px;">
       <p style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:0.95rem;margin:0 0 12px;color:#fff;">What sets it apart from every other CLI harness</p>
       <p style="font-size:0.88rem;line-height:1.7;color:rgba(255,255,255,0.66);margin:0 0 10px;">
-        Claude Code, Codex, Aider, Cursor, Goose — they're all <strong>execution engines</strong>. Each starts
-        cold, asks "what are you building?" again, and competes with the others for the task. They're
-        interchangeable, and none of them remember across the others.
+        Claude Code, Codex, Aider, Cursor, Goose — they're all <strong>execution engines</strong>. Each owns
+        its own session, permissions, interface, and capabilities. They're routable choices at the coordination layer,
+        even though their capabilities differ, and none can transfer a private transcript into the others.
       </p>
       <p style="font-size:0.88rem;line-height:1.7;color:rgba(255,255,255,0.66);margin:0 0 10px;">
         phewsh is the one thing that <strong>isn't</strong> an engine. It keeps <strong>no model of its own</strong>, holds
         <strong>no capability list</strong>, and never sees your subscription credentials. It passes your prompt
-        straight through to the real tool — so the moment Claude Code or Codex ships something new,
-        <strong>phewsh inherits it for free</strong>. Nothing to update on our end.
+        straight through to the real tool — so new native capabilities remain available without Phewsh maintaining
+        a duplicate model or capability catalog.
       </p>
       <p style="font-size:0.88rem;line-height:1.7;color:rgba(255,255,255,0.78);margin:0;">
-        The result: one shared memory across all of them, a record of what you decided and kept, and
-        continuity that works <em>even when you never launch phewsh</em>. That cross-tool record is the moat —
+        The result: one project-owned truth across supported adapters, a record of what you decided and kept, and
+        native context files those tools can read after adapter setup even when the Phewsh front door is closed. That cross-tool record is the moat —
         not the routing. <strong>Swap the engine without rebuilding the car.</strong>
       </p>
     </div>
@@ -790,7 +797,7 @@
     <details>
       <summary>The Ecosystem</summary>
       <div class="detail-body">
-        <p><strong>PHEWSH sits above every AI system as the continuity layer.</strong></p>
+        <p><strong>PHEWSH sits above supported AI tools as the continuity layer.</strong></p>
         <div class="ecosystem-flow">
           <div class="flow-row"><span class="layer">ChatGPT / Claude</span><span class="desc">Reasoning models & conversational interfaces</span></div>
           <div class="arrow">↓</div>
@@ -826,17 +833,17 @@
         <div class="cmd-row"><span class="cmd-name">brief</span><span class="cmd-desc">Verified project state + the accepted work contract for any harness</span></div>
         <div class="cmd-row"><span class="cmd-name">work</span><span class="cmd-desc">WORK — native handoff, evidence-backed postflight, and current verdicts</span></div>
         <div class="cmd-row"><span class="cmd-name">wrap / reconcile</span><span class="cmd-desc">Observe evidence, then approve the exact shared-record update</span></div>
-        <div class="cmd-row"><span class="cmd-name">remember</span><span class="cmd-desc">RECORD — jot a decision so it sticks &amp; every tool inherits it</span></div>
+        <div class="cmd-row"><span class="cmd-name">remember</span><span class="cmd-desc">RECORD — jot a decision into portable <code>.intent/</code> truth</span></div>
         <div class="cmd-row"><span class="cmd-name">clarify</span><span class="cmd-desc">Turn a messy idea into .intent/ artifacts</span></div>
         <div class="cmd-row"><span class="cmd-name">intent</span><span class="cmd-desc">Create, view, evolve .intent/ (--init, --status, --evolve)</span></div>
         <div class="cmd-row"><span class="cmd-name">gate</span><span class="cmd-desc">Set constraints: budget, time, skill, urgency</span></div>
         <div class="cmd-row"><span class="cmd-name">ai</span><span class="cmd-desc">One-shot prompt with .intent/ context</span></div>
-        <div class="cmd-row"><span class="cmd-name">watch</span><span class="cmd-desc">Auto-sync .intent/ → native harness files + cloud</span></div>
+        <div class="cmd-row"><span class="cmd-name">watch</span><span class="cmd-desc">While running: refresh native files; signed-in cloud push unless <code>--no-push</code></span></div>
         <div class="cmd-row"><span class="cmd-name">context</span><span class="cmd-desc">Export .intent/ (--claude, --copy, --file)</span></div>
         <div class="cmd-row"><span class="cmd-name">push / pull</span><span class="cmd-desc">Manual sync to/from phewsh.com/intent</span></div>
-        <div class="cmd-row"><span class="cmd-name">serve</span><span class="cmd-desc">Execution bridge — run from phewsh.com/intent</span></div>
-        <div class="cmd-row"><span class="cmd-name">mcp</span><span class="cmd-desc">Connect AI agents via MCP protocol</span></div>
-        <div class="cmd-row"><span class="cmd-name">receipts</span><span class="cmd-desc">Proof trail — what agents actually did, with evidence</span></div>
+        <div class="cmd-row"><span class="cmd-name">serve</span><span class="cmd-desc">Same-machine Ion worker — human-initiated claims only</span></div>
+        <div class="cmd-row"><span class="cmd-name">mcp</span><span class="cmd-desc">Optional bounded MCP adapter — no autonomous execution authority</span></div>
+        <div class="cmd-row"><span class="cmd-name">receipts</span><span class="cmd-desc">Local evidence trail — routes, changes, verdicts, and explicit losses</span></div>
         <div class="cmd-row"><span class="cmd-name">update</span><span class="cmd-desc">Update phewsh to the latest version</span></div>
         <div class="cmd-row"><span class="cmd-name">login</span><span class="cmd-desc">Identity + API key + cloud sync</span></div>
         <div class="cmd-row"><span class="cmd-name">link</span><span class="cmd-desc">Link local .intent/ to cloud project</span></div>
@@ -846,7 +853,7 @@
     <details>
       <summary>The Decision Gate</summary>
       <div class="detail-body">
-        <p>Part of <strong>Project</strong>: set the constraints that shape every AI response — and decide <em>whether</em> to build before you build.</p>
+        <p>Part of <strong>Project</strong>: record constraints for supported tool briefs — and decide <em>whether</em> to build before you build.</p>
         <pre><code><span style="color:var(--accent)">phewsh ></span> /gate
 <span style="color:var(--text-dim)">  Budget?     $50
   Time?       15 hrs/week
@@ -859,7 +866,7 @@
     <details>
       <summary>MCP Server for AI agents</summary>
       <div class="detail-body">
-        <p>Any MCP-capable agent can connect, get tasks, report results, and chain autonomously.</p>
+        <p>Configured MCP clients can read bounded project context and tasks, then report results. MCP is an optional adapter, not project truth or permission for autonomous execution.</p>
         <pre><code><span style="color:var(--green)">$</span> phewsh mcp setup    <span style="color:var(--text-dim)"># add to Claude Code config</span></code></pre>
         <p><strong>Agent tools:</strong> <code>phewsh_start</code>, <code>phewsh_next_task</code>, <code>phewsh_complete_task</code>, <code>phewsh_flag_blocker</code>, <code>phewsh_get_context</code></p>
       </div>
@@ -868,12 +875,12 @@
     <details>
       <summary>Security &amp; privacy — what we verified</summary>
       <div class="detail-body">
-        <p style="color:rgba(255,255,255,0.55);font-size:0.82rem;">An honest report of how phewsh handles your data, traced from the source. Last audited 2026-06-13 against the published CLI.</p>
-        <p><strong>Your prompts and code stay yours.</strong> phewsh runs locally. When it executes through an installed tool (Claude Code, Codex…), it uses <em>that tool's own login</em> — your Claude subscription, your ChatGPT plan. phewsh never sees those credentials and never proxies your conversations through our servers.</p>
+        <p style="color:rgba(255,255,255,0.55);font-size:0.82rem;">A maintained, source-backed self-assessment — not an independent audit. Read the <a href="https://github.com/cleverIdeaz/phewsh-cli/blob/main/docs/threat-model.md" style="color:var(--accent)">threat model</a> and <a href="https://github.com/cleverIdeaz/phewsh-cli/blob/main/docs/release-checklist.md" style="color:var(--accent)">release checklist</a>. npm provenance is not live yet.</p>
+        <p><strong>Native tools keep their own trust boundary.</strong> When phewsh executes through Claude Code, Codex, or another installed tool, that tool uses its own login and data policy. phewsh does not read those credentials or receive the native transcript. Provider, cloud, and browse features still send the data their selected destination requires.</p>
         <p><strong>API keys are stored owner-only.</strong> A bring-your-own key lives in <code>~/.phewsh/config.json</code> written at filesystem mode <code>0600</code> (only your user can read it), in a <code>0700</code> directory. A key you set is never written to command history. BYOK requests go <em>directly</em> to the provider — not through phewsh.</p>
-        <p><strong>The local bridge is loopback-only.</strong> <code>phewsh serve</code> binds to <code>127.0.0.1</code> / <code>::1</code> — never a public interface. Every request is checked against a strict origin allowlist (phewsh.com and localhost); anything else gets a <code>403</code>. It runs only while you run it.</p>
+        <p><strong>The local bridge is loopback-only by default, not authenticated.</strong> <code>phewsh serve</code> binds to <code>127.0.0.1</code> / <code>::1</code> and applies a browser origin allowlist. Another process on your machine may still call it; loopback is not authentication. Never expose the optional unauthenticated MCP HTTP host on an untrusted network.</p>
         <p><strong>Telemetry is counts, never content.</strong> Sustainability tracking sends the model name, token <em>counts</em>, and an energy estimate — <strong>never your prompts or the responses</strong>. There is no hidden content collection.</p>
-        <p><strong>Ambient hooks read nothing private.</strong> The Claude Code continuity hook leaves metadata breadcrumbs only (timestamp, project name) and <strong>never reads your transcript</strong>. The brief it injects is built only from your own <code>.intent/</code> files and your own decision record.</p>
+        <p><strong>Ambient hooks do not read native transcripts.</strong> They read selected project-owned <code>.intent/</code> files and Phewsh's local decision record to build a brief, then leave metadata breadcrumbs. Treat those project records as potentially sensitive.</p>
         <p><strong>No lock-in.</strong> <code>.intent/</code> is plain markdown/JSON in your repo. Delete phewsh and it's all still there, readable by any tool.</p>
         <p style="color:rgba(255,255,255,0.45);font-size:0.78rem;">Found something? Responsible disclosure: <a href="mailto:hello@phewsh.com" style="color:var(--accent)">hello@phewsh.com</a>.</p>
       </div>

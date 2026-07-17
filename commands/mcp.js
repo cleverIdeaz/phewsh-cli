@@ -1,10 +1,10 @@
-// phewsh mcp — Set up and sync the PHEWSH MCP coordination layer.
+// phewsh mcp — Preview, serve, and sync the optional PHEWSH MCP adapter.
 //
 // The MCP server ships inside this package (mcp/ — ESM subtree).
 // No second install, no phewsh-mcp-server package.
 //
 // Usage:
-//   phewsh mcp setup           — Configure Claude Code to use the bundled server
+//   phewsh mcp setup           — Print manual Claude Code config + sync project cache
 //   phewsh mcp sync            — Sync local .intent/ + cloud projects → ~/.phewsh/projects.json
 //   phewsh mcp status          — Check what agents can see right now
 //   phewsh mcp serve           — Start the HTTP transport for the web bridge (:7483)
@@ -224,6 +224,7 @@ async function serve() {
 }
 
 async function setup() {
+  console.log(`\n  ${b('Manual MCP client setup')} ${g('— Phewsh will not edit agent config')}`);
   console.log('');
   console.log(`  ${b(w('PHEWSH MCP Setup'))}`);
   console.log(`  ${g('Connect your AI agents to your project intelligence')}`);
@@ -242,7 +243,7 @@ async function setup() {
 
   console.log(`  ${green('MCP server:')} ${g('bundled with phewsh — no separate install')}`);
 
-  // 2. Generate settings.json snippet — points at phewsh itself, survives upgrades
+  // 2. Print a settings.json snippet — points at phewsh itself, survives upgrades
   const claudeSettingsPath = path.join(os.homedir(), '.claude', 'settings.json');
   const snippet = {
     mcpServers: {
@@ -435,13 +436,29 @@ async function main() {
     case 'serve':
       await serve();
       break;
+    case 'token': {
+      const { mintToken } = require('../lib/mcp-token');
+      try {
+        const out = await mintToken();
+        console.log(`\n  ${b('Remote MCP token')} (Supabase JWT${out.expiresInMin !== null ? `, expires in ~${out.expiresInMin} min` : ''})\n`);
+        console.log(`  ${out.token}\n`);
+        console.log(`  ${green('Connect Claude Code:')}`);
+        console.log(`  ${w(out.addCommand)}\n`);
+        console.log(`  ${d('For a long-lived key instead, use a phewsh API key from phewsh.com/api.')}\n`);
+      } catch (err) {
+        console.error(`\n  ${yellow(err.message)}\n`);
+        process.exitCode = 1;
+      }
+      break;
+    }
     default:
       console.log(`\n  ${b('phewsh mcp')} — Connect AI agents to your project intelligence\n`);
-      console.log(`  ${w('setup')}            Configure agents to use the bundled MCP server`);
+      console.log(`  ${w('setup')}            Print manual Claude Code config + sync project cache`);
       console.log(`  ${w('sync')}             Sync projects → ~/.phewsh/projects.json`);
       console.log(`  ${w('status')}           Check what agents can see right now`);
       console.log(`  ${w('serve')}            Run the HTTP bridge for the web app (:7483)`);
       console.log(`  ${w('serve --stdio')}    Run the stdio MCP server (for agent configs)`);
+      console.log(`  ${w('token')}            Print a bearer token for the remote MCP server`);
       console.log('');
   }
 }

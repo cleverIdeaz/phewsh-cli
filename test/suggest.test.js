@@ -65,7 +65,12 @@ test('council suggested only with 2+ harnesses and some history', () => {
 
 test('enable-ambient fires for any installed harness when ambient is off', () => {
   // Claude Code off → suggest (it gets the live hook).
-  assert.ok(suggestAll({ hasIntentDir: true, intentFileCount: 1, ambientOn: false, installedHarnesses: ['claude-code'] }).find(x => x.id === 'enable-ambient'));
+  const ambient = suggestAll({ hasIntentDir: true, intentFileCount: 1, ambientOn: false, installedHarnesses: ['claude-code'] }).find(x => x.id === 'enable-ambient');
+  assert.ok(ambient);
+  assert.match(ambient.message, /reversible native adapters/);
+  assert.match(ambient.message, /\.intent\/ stays project truth/);
+  assert.match(ambient.why, /phewsh-managed skill, hook, and context adapters/);
+  assert.match(ambient.why, /ambient off/);
   // Ambient already on → never suggest.
   assert.ok(!suggestAll({ hasIntentDir: true, intentFileCount: 1, ambientOn: true, installedHarnesses: ['claude-code'] }).find(x => x.id === 'enable-ambient'));
   // Non-Claude tool off → NOW suggest too: it benefits via synced + global base files.

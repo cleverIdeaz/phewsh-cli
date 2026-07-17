@@ -210,8 +210,8 @@ async function main() {
     Purpose, Audience, Method, Scope, Edge (--deep adds Context, Resources,
     Strategy, Signals, Risks, Values, Impact) — one question at a time, so
     the terminal helps you *think*, not just compile. Then it writes
-    vision.md, plan.md, next.md — YOUR files, the project truth every AI
-    tool reads. Files you've edited by hand are never overwritten.
+    vision.md, plan.md, next.md — YOUR files, project truth supported tool
+    adapters can read. Files you've edited by hand are never overwritten.
     (.intent/pps.json holds the compiled spec + generation receipts.)
 
   Requires:

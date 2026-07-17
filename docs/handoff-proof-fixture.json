@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "scenario": "claude-usage-limit-to-codex",
+  "purpose": "Prove the receipt boundary before any destination-model output.",
+  "failed_attempt": {
+    "route": "claude-code",
+    "observed": "usage limit reached",
+    "captured_in_receipt": false,
+    "reason": "Native tool output and transcripts are outside the receipt."
+  },
+  "handoff": {
+    "from": "claude-code",
+    "to": "codex",
+    "trigger": "explicit-handoff",
+    "created_at": "2026-07-16T12:00:00.000Z"
+  },
+  "project": {
+    "files": {
+      ".intent/vision.md": "# Vision\nShip refresh-token rotation without losing the project constraints.\n",
+      ".intent/next.json": "{\"items\":[{\"id\":\"rotate\",\"state\":\"now\",\"title\":\"Finish refresh-token rotation\"}]}\n",
+      "src/session.js": "export function rotateRefreshToken(token) { return token; }\n"
+    },
+    "committed": [
+      ".intent/vision.md",
+      ".intent/next.json"
+    ],
+    "dirty": [
+      "src/session.js"
+    ]
+  },
+  "brief": "# Verified handoff brief\nProject: auth-service\nNext: finish refresh-token rotation\nVerify the checkout before continuing.\n",
+  "expected": {
+    "receipt_before_destination_output": true,
+    "pickup_status": "verified",
+    "intent_paths": [
+      ".intent/next.json",
+      ".intent/vision.md"
+    ],
+    "dirty_paths": [
+      "src/session.js"
+    ],
+    "not_carried": [
+      "conversation transcript",
+      "model reasoning",
+      "editor buffers",
+      "harness-local memory",
+      "unrecorded decisions"
+    ]
+  }
+}

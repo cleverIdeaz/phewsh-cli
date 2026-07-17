@@ -44,6 +44,19 @@ function loadLedger() {
   catch { return { applied: {} }; }
 }
 
+function hasHook(file, eventName, command) {
+  try {
+    const config = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    return (config?.hooks?.[eventName] || [])
+      .some(entry => (entry.hooks || []).some(hook => hook.command === command));
+  } catch { return false; }
+}
+
+function safetyHooksApplied(file) {
+  return hasHook(file, 'PreToolUse', 'phewsh hook pre-tool')
+    && hasHook(file, 'PostToolUse', 'phewsh hook post-tool');
+}
+
 function main() {
   const cwd = process.cwd();
   const intentDir = path.join(cwd, '.intent');
@@ -52,7 +65,7 @@ function main() {
 
   console.log('');
   console.log(`  ${b('😮‍💨 PHEWSH STATUS')} ${slate('· ' + projectName(cwd))}`);
-  console.log(`  ${slate('Project · Next · Work · Record — the four answers every tool inherits')}`);
+  console.log(`  ${slate('Project · Next · Work · Record — four recorded answers supported tools can read')}`);
   console.log('');
 
   // ── PROJECT — what you're building & why ───────────────────────────
@@ -115,6 +128,25 @@ function main() {
         : ` ${slate('·')} ${slate('no drift')}`;
     } catch { /* best-effort */ }
     console.log(row('RECORD', `${cream(stats.total + ' decisions')}${stats.total ? pend : slate(' — none yet')}${noteBit}${driftBit}`));
+    try {
+      const handoffReceipts = require('../lib/handoff-receipt');
+      const handoff = handoffReceipts.latestHandoffReceipt({ cwd });
+      if (!handoff) {
+        console.log(row('', slate('handoff: none — cold start from .intent/ only')));
+      } else if (handoff.status === 'verified') {
+        const unfinished = handoff.receipt?.trigger === 'work-start';
+        console.log(row('', unfinished
+          ? `${yellow('△')} ${peach('handoff ' + handoff.id + ' matches work start')} ${slate('· no exit receipt; unrecorded decisions were not carried')}`
+          : `${ok} ${sage('handoff ' + handoff.id + ' verified')} ${slate('· truth + repository unchanged')}`));
+      } else if (handoff.status === 'partial') {
+        console.log(row('', `${yellow('△')} ${peach('handoff ' + handoff.id + ' partial')} ${slate('· ' + handoffReceipts.summarizeEvidence(handoff.repositoryPartial))}`));
+      } else if (handoff.status === 'moved') {
+        const moved = [...handoff.truthChanged, ...handoff.repositoryChanged, ...handoff.briefChanged];
+        console.log(row('', `${yellow('△')} ${peach('handoff ' + handoff.id + ' moved')} ${slate('· ' + handoffReceipts.summarizeEvidence(moved))}`));
+      } else {
+        console.log(row('', `${yellow('!')} ${peach('handoff ' + (handoff.id || 'receipt') + ' invalid')} ${slate('· ' + handoff.reason)}`));
+      }
+    } catch { /* handoff evidence is best-effort */ }
   }
 
   // ── Delivery (implementation — how phewsh reaches your tools) ───────
@@ -125,8 +157,39 @@ function main() {
   try { ambientOn = fs.readFileSync(path.join(os.homedir(), '.claude', 'settings.json'), 'utf-8').includes('phewsh hook session-start'); } catch { /* off */ }
   const gb = (ledger.applied && ledger.applied.globalBase) ? 'base files' : null;
   const sc = (ledger.applied && ledger.applied.slashCommands && ledger.applied.slashCommands.tools) || [];
-  const ambientBits = [ambientOn ? 'Claude hook' : null, gb, sc.length ? '/intent in ' + sc.join(', ') : null].filter(Boolean);
-  console.log(row('Ambient', (ambientOn || gb) ? `${ok} ${sage('on')} ${slate('(' + (ambientBits.join(' · ') || 'context sync') + ')')}` : `${off} ${slate('off — ')}${cream('phewsh ambient on')}`));
+  let skillState = { checked: [], satisfied: [], exact: [], managed: [], outdated: [], projectOverrides: [] };
+  try { skillState = require('../lib/intent-skills').intentSkillStatus(); } catch { /* best-effort */ }
+  const outdatedSkills = skillState.outdated || [];
+  const customSkills = skillState.satisfied.filter(id => !skillState.exact.includes(id) && !outdatedSkills.includes(id));
+  const pendingSkills = skillState.checked.filter(id => !skillState.satisfied.includes(id));
+  const projectOverrides = skillState.projectOverrides || [];
+  const safetyHooks = [
+    safetyHooksApplied(path.join(os.homedir(), '.claude', 'settings.json')) ? 'claude-code' : null,
+    safetyHooksApplied(path.join(os.homedir(), '.codex', 'hooks.json')) ? 'codex' : null,
+  ].filter(Boolean);
+  const adapterBits = [
+    ambientOn ? 'Claude session hooks' : null,
+    skillState.exact.length ? 'intent skill in ' + skillState.exact.join(', ') : null,
+    outdatedSkills.length ? 'intent skill update available in ' + outdatedSkills.join(', ') : null,
+    customSkills.length ? 'custom intent skill in ' + customSkills.join(', ') : null,
+    pendingSkills.length ? 'intent skill pending in ' + pendingSkills.join(', ') : null,
+    projectOverrides.length ? 'project-local intent skill override' : null,
+    safetyHooks.length ? 'safety/receipt hooks in ' + safetyHooks.join(', ') : null,
+    gb ? 'generated base files' : null,
+    sc.length ? '/intent fallback in ' + sc.join(', ') : null,
+  ].filter(Boolean);
+  const adaptersDelivered = ambientOn || gb || skillState.satisfied.length > 0 || projectOverrides.length > 0 || safetyHooks.length > 0 || sc.length > 0;
+  console.log(row('Adapters', adaptersDelivered ? `${ok} ${sage('on')} ${slate('(' + (adapterBits.join(' · ') || 'context sync') + ')')}` : `${off} ${slate('off — ')}${cream('phewsh ambient on')}`));
+  for (const override of projectOverrides) {
+    const exact = override.state === 'exact';
+    const detail = exact
+      ? 'matches Phewsh canonical · project-local, user-owned, preserved'
+      : override.state === 'different'
+        ? 'differs from Phewsh canonical · can override the user-level skill'
+        : 'could not be read · can override the user-level skill';
+    console.log(row('Project skill', `${exact ? ok : yellow('!')} ${cream(override.relative)} ${slate('(' + override.id + ' · ' + detail + ')')}`));
+    if (!exact) console.log(row('', slate('phewsh will not edit it; review, rename, or remove that project-local file yourself')));
+  }
 
   let shimInstalled = [];
   try { shimInstalled = require('../lib/shims').shimStatus().installed; } catch { /* none */ }

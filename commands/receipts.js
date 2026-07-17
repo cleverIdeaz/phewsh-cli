@@ -3,6 +3,7 @@
 // Every claim an agent makes leaves evidence in ~/.phewsh/:
 //   sessions/   what happened, when, by which agent (events)
 //   results/    task completions + flagged blockers (full records)
+//   handoffs/   what portable truth crossed tools, and what did not
 //   spend/      what it cost, per model, per day
 //   bridge/     web↔CLI dispatch jobs and their outcomes
 //
@@ -60,6 +61,12 @@ function renderEvent(e) {
     case 'dispatch_enqueued':
       icon = cyan('→'); line = `${g('dispatched from web —')} ${(e.data.taskSummary || '').slice(0, 60)}`;
       break;
+    case 'handoff':
+      icon = e.valid === false ? red('✕') : cyan('⇄');
+      line = e.valid === false
+        ? `${w(e.data.id || 'handoff')} ${red('— invalid integrity')}`
+        : `${w(e.data.id || 'handoff')} ${g('—')} ${g((e.data.routes?.from || 'unknown') + ' → ' + (e.data.routes?.to || 'unselected'))} ${g('· ' + (e.data.carried?.intent?.length || 0) + ' truth file(s)')}`;
+      break;
     case 'job_done':
       icon = green('✓'); line = `${g('web job —')} ${(e.data.result || '').slice(0, 70)}`;
       break;
@@ -93,7 +100,7 @@ async function main() {
   if (json) {
     console.log(JSON.stringify({
       summary,
-      events: shown.map(e => ({ ts: e.ts, project: e.project, agent: e.agent, kind: e.kind, receipt: `~/.phewsh/${e.receipt}`, data: e.data })),
+      events: shown.map(e => ({ ts: e.ts, project: e.project, agent: e.agent, kind: e.kind, valid: e.valid, receipt: `~/.phewsh/${e.receipt}`, data: e.data })),
     }, null, 2));
     return;
   }
@@ -103,7 +110,8 @@ async function main() {
   console.log('');
 
   if (totalEvents === 0) {
-    console.log(`  ${g('No receipts yet. They appear when agents work through PHEWSH:')}`);
+    console.log(`  ${g('No receipts yet. They appear when you hand off or agents work through PHEWSH:')}`);
+    console.log(`  ${g('•')} ${w('phewsh')} ${g('→ /work or /switch — carry verified truth into another native tool')}`);
     console.log(`  ${g('•')} ${w('phewsh mcp setup')} ${g('— connect Claude Code / Cursor to the coordination layer')}`);
     console.log(`  ${g('•')} ${w('phewsh mcp serve')} ${g('— let the web app dispatch work to your machine')}`);
     console.log('');
@@ -116,6 +124,8 @@ async function main() {
   if (counts.blocked) parts.push(red(`${counts.blocked} blocked`));
   if (counts.gated) parts.push(`${counts.gated} gate checks`);
   if (counts.dispatched) parts.push(cyan(`${counts.dispatched} web dispatches`));
+  if (counts.handoffs) parts.push(cyan(`${counts.handoffs} handoff${counts.handoffs === 1 ? '' : 's'}`));
+  if (counts.invalidHandoffs) parts.push(red(`${counts.invalidHandoffs} invalid handoff${counts.invalidHandoffs === 1 ? '' : 's'}`));
   console.log(`  ${parts.join(g(' · '))}`);
   if (spend.days > 0) {
     console.log(`  ${g('spend:')} $${spend.today.toFixed(4)} today ${g('·')} $${spend.total.toFixed(4)} across ${spend.days} day${spend.days === 1 ? '' : 's'} ${g('(~/.phewsh/spend/)')}`);

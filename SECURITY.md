@@ -1,97 +1,117 @@
 # Security & Data Flow — phewsh CLI
 
-phewsh is a **local-first** tool. It runs on your machine, reads your project's
-`.intent/` and your installed AI tools' config, and helps you carry context
-between those tools. This document states — factually, traceable to source —
-what it reads, writes, and sends. No vague claims; if something here is wrong,
-it's a bug: **hello@phewsh.com**.
+Phewsh is a **local-first continuity layer**, not a sandbox. It reads project
+records, projects bounded context into supported AI tools, and can launch tools
+that run with your user account's authority. This page is a source-backed
+inventory of what the CLI reads, writes, and sends.
 
-> Status: this is an honest self-documented inventory, **not** an independent
-> audit. The CLI source is **public and MIT-licensed** at
-> **github.com/cleverIdeaz/phewsh-cli** — an exact mirror of the published npm
-> package, so you can read exactly what you install (`bin/ commands/ lib/ mcp/`).
-> An independent review is still planned (see "Roadmap").
+> **Status:** self-documented and tested, **not independently audited**. The
+> MIT-licensed source snapshot is public at
+> [cleverIdeaz/phewsh-cli](https://github.com/cleverIdeaz/phewsh-cli). The npm
+> artifact is manually published today and is not yet cryptographically linked
+> to that repository. See the [threat model](./docs/threat-model.md) and
+> [release integrity checklist](./docs/release-checklist.md).
 
 ## What phewsh reads
-- **`.intent/`** in your project (`vision.md`, `plan.md`, `status.md`, `next.md`,
-  `project.json`, `next.json`). This is the source of truth it projects.
-- **Your tools' context files** when present: `CLAUDE.md`, `AGENTS.md`,
-  `GEMINI.md`, `.cursorrules`, `.github/copilot-instructions.md`, `README.md`.
-- **Your Claude project memory** (`~/.claude/projects/<cwd>/memory/MEMORY.md` and
-  files it links) and **global per-user memory** (`~/.claude/CLAUDE.md`,
-  `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`) — read-only, used to enrich the
-  `phewsh seq` summary. Global memory is **never** written into a project file
-  unless you pass `--include-global` (`lib/sequencer/index.js`).
-- **Git status** of the current repo (read-only: `git status`, HEAD, diff stats).
 
-## What phewsh writes (and where)
-Every generated block is wrapped in `<!-- PHEWSH:START -->` / `<!-- PHEWSH:END -->`
-markers; **content outside the markers is preserved byte-for-byte** (tested).
-- **Project context files** — the canonical `.intent/` projection into
-  `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` / `.cursorrules` (only files that
-  already exist, unless you create them). One canonical projector
-  (`lib/selfheal.js`) is the single writer.
-- **`~/.phewsh/`** — `config.json` (your settings/keys, mode **0600**, dir 0700),
-  `briefs/` (saved handoff briefs), `sessions/`, `receipts/`, ledger files.
-- **Shell rc** — only if you run `phewsh shim on` (adds one PATH line; reversible
-  with `phewsh shim off`).
-- **Global base files** — only if you run `phewsh ambient on`: a marker-wrapped
-  block in `~/.claude/CLAUDE.md` etc. for tools you already have. Reversible with
-  `phewsh ambient off`.
-- **Claude Code hook** — `phewsh ambient on` registers `SessionStart`/`SessionEnd`
-  hooks (context injection + a metadata breadcrumb; **never your transcript**).
+- Project truth in `.intent/`, plus Git status, HEAD, and diff statistics.
+- Existing native context files such as `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`,
+  `.cursorrules`, Copilot instructions, and `README.md`.
+- Claude project/global memory and other supported tools' global context files
+  when building a `phewsh seq` summary. Global content is not copied into a
+  project unless you pass `--include-global`.
+- Local Phewsh configuration, receipts, decisions, and session metadata.
 
-## Network calls (exactly these)
-phewsh makes **no network calls for its core local features** (sequencing,
-projection, briefs, status). Calls happen only for these named actions:
-- **`api.anthropic.com` / `openrouter.ai` / `api.together.xyz`** — only if you set
-  a BYOK key and use `/run` or the API route. Your key goes **directly** to the
-  provider; it is **not** proxied through phewsh servers.
-- **`registry.npmjs.org`** — version check for `phewsh update` (notify-only by
-  default).
-- **`<project>.supabase.co`** — only if you `/login`: auth + optional cloud sync
-  of your `.intent/` (you initiate `push`/`pull`).
-- **`phewsh.com`** — only for `phewsh serve`/cloud-bridge actions you start.
-- **Sustainability telemetry** (`trackSap`, `lib/supabase.js`) — sends **model
-  name, token counts, and a kWh estimate only**. No prompts, no responses, no
-  file contents. Tied to your account id only when logged in.
+Phewsh does not read or store native tool transcripts through its ambient
+hooks. A native tool may still read files or send prompts under that tool's own
+permissions and policy.
+
+## What phewsh writes
+
+- Marker-wrapped projections in supported native context files. Content outside
+  `<!-- PHEWSH:START -->` / `<!-- PHEWSH:END -->` is preserved.
+- Local state under `~/.phewsh/`: configuration, briefs, handoff receipts,
+  session metadata, and ledgers. `config.json` and handoff receipt paths are
+  explicitly owner-only (`0600` files, `0700` directories) on POSIX systems.
+  Other local ledgers rely on the owning account and process umask today; treat
+  the whole directory as sensitive.
+- A reversible PATH line only after `phewsh shim on`.
+- Reversible, marker-wrapped global adapter blocks and unmodified Phewsh-owned
+  intent-skill copies only after `phewsh ambient on`.
+- Claude Code and Codex lifecycle/safety hooks after `phewsh ambient on`.
+
+Handoff receipts contain paths, fingerprints, Git state, route labels, and a
+brief hash—not file contents, prompts, responses, transcripts, or model
+reasoning. Gitignored files are not named or hashed. Browser-facing receipt
+views are redacted. A SHA-256 match detects later change; it is **not a
+signature** and does not prove who created the receipt.
+
+## Network boundaries
+
+Core projection, status, local brief generation, and receipt verification can
+run without network access. Network calls occur when a user selects a feature
+that needs them, including:
+
+- npm registry version checks and optional updates;
+- direct requests to configured model providers, a configured custom endpoint,
+  local Ollama, or Phewsh's pooled provider route;
+- Supabase authentication, cloud sync, Ion/team features, and sustainability
+  telemetry;
+- user-requested URL browsing, YouTube captions, GitHub API feedback/listing,
+  and OAuth flows;
+- same-machine HTTP bridges started by the user.
+
+BYOK requests go to the selected provider or configured endpoint. The endpoint
+receives the prompt supplied to that provider. Sustainability telemetry sends
+the model, prompt/completion token counts, estimated kWh/CO2/water, a session
+identifier, and an account identifier when logged in—never prompt or response
+content. A user-requested browse sends a request to the supplied URL.
 
 ## Credentials
-- A bring-your-own key lives in `~/.phewsh/config.json` at mode **0600**
-  (`lib/config-file.js`) and is sent **directly to the provider**, never to us.
-- phewsh routes through your installed tools on **their own login** (your Claude
-  subscription, your ChatGPT plan) — it does not see or store those credentials.
 
-## The local bridge
-`phewsh serve` binds **`127.0.0.1` only** (loopback), with an origin allowlist,
-and runs only while you run it.
+Phewsh stores its own Supabase tokens and BYOK values in
+`~/.phewsh/config.json`, hardened to mode `0600` inside a `0700` directory on
+POSIX systems. Phewsh does not read Claude Code, Codex, Gemini, or Cursor
+credentials; spawned tools authenticate themselves.
 
-## Known issues / hardening backlog (honest)
-- **Local shell-injection surface (medium, local-only):** a few call sites build
-  shell strings from REPL input via `execSync` (e.g. `commands/session.js` gate /
-  outcomes arg passthrough). Inputs are your own typed/pasted text on your own
-  machine, but crafted args could execute. Fix: convert to argument-safe
-  `execFileSync`/`spawnSync`. Tracked as a Next item.
-- **No release provenance yet** — npm provenance, signed tags, and a public
-  source repo are planned (Roadmap) so the published artifact is verifiable.
+## Local bridges
+
+`phewsh serve` binds IPv4 and IPv6 loopback (`127.0.0.1` and `::1`) and applies
+a browser-origin allowlist. Project claims are rechecked against registration,
+cloud project identity, and Git origin. The legacy local dispatch surface is
+broader and should be treated as local-user authority.
+
+**Loopback is not authentication.** Another process running as your user may
+be able to call a local service, and non-browser clients do not supply a browser
+Origin header. The optional MCP HTTP transport is also unauthenticated. Never
+set `PHEWSH_MCP_HOST` to a non-loopback interface on an untrusted network.
+
+## Safety gate
+
+The pre-tool gate blocks a narrow set of catastrophic command shapes and may
+ask about high-blast-radius operations depending on autonomy. It is deliberately
+**fail-open** if hook input cannot be understood, uses pattern/segment matching
+rather than a complete shell parser, and covers known tool names. It is a
+last-line safety aid, **not a sandbox or authorization system**.
+
+## Supply chain status
+
+The npm release and public source mirror are synchronized manually. There is
+currently **no release provenance**, signed tag, or registry attestation tying
+an installed tarball to a public commit. Users can inspect `npm pack`, the
+public source snapshot, or the installer before running it, but similarity is
+not cryptographic proof. The required release procedure and promotion gate are
+in the [release integrity checklist](./docs/release-checklist.md).
 
 ## Disable / uninstall
-- `phewsh ambient off` — removes injected hooks and global base files; restores
-  your files.
-- `phewsh shim off` — removes the PATH line.
-- `npm uninstall -g phewsh` — removes the CLI. `rm -rf ~/.phewsh` removes local
-  state. Generated `PHEWSH:START/END` blocks can be deleted by hand; everything
-  outside them is yours and untouched.
 
-## Roadmap to verifiable trust
-Done: this doc, exec hardening, telemetry stays counts-only and explicit, and a
-**public MIT source repo** (`cleverIdeaz/phewsh-cli`) mirroring the npm package.
-Before broad promotion: npm provenance, signed tags, and dependency/secret
-scanning so the published artifact is cryptographically verifiable from the
-public source. For enterprise: a documented threat model and an independent
-security assessment. We will not call phewsh "audited" until an independent
-audit has actually occurred.
+- `phewsh ambient off` removes injected hooks, global blocks, and unchanged
+  Phewsh-owned intent-skill copies.
+- `phewsh shim off` removes the PATH line.
+- `npm uninstall -g phewsh` removes the CLI. Local `~/.phewsh/` state and
+  project `.intent/` files remain yours and can be removed separately.
 
 ## Reporting
-Security issues: **hello@phewsh.com**. Please allow reasonable time to remediate
-before public disclosure.
+
+Security issues: **hello@phewsh.com**. Please allow reasonable time to
+remediate before public disclosure.

@@ -31,6 +31,8 @@ test('brief uses verified truth and labels intent as claims', () => {
   assert.match(brief, /Intent Claims/);
   assert.match(brief, /Conflict: Generated context is stale/);
   assert.match(brief, /generated summaries or model memory/);
+  assert.match(brief, /no receipt; cold start from \.intent\/ only/);
+  assert.match(brief, /Not carried: conversation transcript, model reasoning/);
 });
 
 test('a fresh brief changes when the working state changes before switching tools', () => {
@@ -59,4 +61,22 @@ test('brief carries only accepted success criteria for the current work item', (
   assert.match(brief, /\[measurable\] all lifecycle checks pass/);
   assert.match(brief, /\[human judgment\] the result feels clear/);
   assert.match(brief, /1 proposed criterion\/criteria omitted until the user accepts them/);
+});
+
+test('brief names a verified or moved handoff without claiming model memory', () => {
+  const verified = formatBrief(report(), {
+    cwd: '/tmp/project',
+    handoff: { status: 'verified', id: 'h-abc123' },
+  });
+  assert.match(verified, /Handoff: h-abc123 verified/);
+  assert.doesNotMatch(verified, /model understood|continuity confirmed/i);
+
+  const moved = formatBrief(report(), {
+    cwd: '/tmp/project',
+    handoff: {
+      status: 'moved', id: 'h-abc123',
+      truthChanged: ['.intent/next.json'], repositoryChanged: ['Git HEAD changed'],
+    },
+  });
+  assert.match(moved, /Handoff: h-abc123 moved.*\.intent\/next\.json, Git HEAD changed/);
 });

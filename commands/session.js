@@ -33,6 +33,12 @@ const { loadIntentContext } = require('../lib/intent-context');
 const { auditTruth, formatTruth, quickVerifiedState } = require('../lib/truth');
 const { generateBrief, persistBrief } = require('../lib/brief');
 const {
+  attachBrief,
+  createHandoffReceipt,
+  handoffSummary,
+  verifyHandoffReceipt,
+} = require('../lib/handoff-receipt');
+const {
   applyReconciliation,
   captureSnapshot,
   createPostflight,
@@ -73,29 +79,55 @@ function copyToClipboard(text) {
   return false;
 }
 
+async function prepareHandoff({ report, projectName, fromRoute, toRoute, trigger }) {
+  const created = createHandoffReceipt({ report, fromRoute, toRoute, trigger });
+  const verification = created.written ? verifyHandoffReceipt(created.file) : null;
+  let receiptSummary = report.receipts;
+  try { receiptSummary = require('../lib/receipts-data').gatherReceipts({ project: projectName, limit: 5 }).summary; } catch { /* keep audited summary */ }
+  const reportWithReceipt = { ...report, receipts: receiptSummary };
+  const generated = await generateBrief({ report: reportWithReceipt, handoff: verification });
+  const saved = persistBrief(generated.content, { project: projectName, route: toRoute || 'unknown' });
+  if (created.written && saved.written) attachBrief(created.file, saved.hash, saved.file);
+  return {
+    content: generated.content,
+    saved,
+    receipt: created,
+    verification: created.written ? verifyHandoffReceipt(created.file) : null,
+  };
+}
+
 // Show the cross-harness handoff — the heart of phewsh's continuity promise:
 // the verified brief that travels to whatever AI tool you pick up next, now
 // rendered as readable markdown instead of raw text and saved so the next tool
 // (or the next phewsh session) inherits it. Best-effort and fail-soft; a
 // handoff that can't generate must never block exit or a switch.
-async function showHandoff({ projectName, route, reason = '', nextHint = true } = {}) {
-  let result = { shown: false, file: null };
+async function showHandoff({ projectName, route, reason = '', nextHint = true, trigger = 'explicit-handoff' } = {}) {
+  let result = { shown: false, file: null, receipt: null };
   try {
-    const { content } = await generateBrief();
+    const report = await auditTruth();
+    const prepared = await prepareHandoff({
+      report,
+      projectName,
+      fromRoute: route || 'phewsh',
+      toRoute: 'unselected',
+      trigger,
+    });
     const { renderMarkdown } = require('../lib/md');
-    const saved = persistBrief(content, { project: projectName, route: route || 'unknown' });
     console.log('');
     console.log(`  ${teal('●')} ${b(cream('Handoff ready'))}${reason ? ' ' + slate('— ' + reason) : ''}`);
-    console.log(`  ${slate('This is exactly what travels to the next AI tool — nothing re-explained.')}`);
+    console.log(`  ${slate('Portable truth travels; the receipt says exactly what does not.')}`);
     ui.divider('line');
-    console.log(renderMarkdown(content));
+    console.log(renderMarkdown(prepared.content));
     ui.divider('line');
-    if (saved.written) console.log(`  ${slate('saved · ' + saved.file.replace(require('os').homedir(), '~'))}`);
-    copyToClipboard(content);
+    if (prepared.verification) console.log(`  ${green('✓')} ${sage(handoffSummary(prepared.verification))}`);
+    else console.log(`  ${ember('!')} ${slate('handoff receipt unavailable — ' + (prepared.receipt.reason || 'local write failed'))}`);
+    if (prepared.saved.written) console.log(`  ${slate('brief saved · ' + prepared.saved.file.replace(require('os').homedir(), '~'))}`);
+    if (prepared.receipt.written) console.log(`  ${slate('receipt saved · ' + prepared.receipt.file.replace(require('os').homedir(), '~'))}`);
+    copyToClipboard(prepared.content);
     console.log(`  ${slate('copied to clipboard · paste into any tool, or')} ${cream('/use codex')} ${slate('to continue here')}`);
     if (nextHint) console.log(`  ${slate('full verified brief anytime:')} ${cream('/brief')} ${slate('·')} ${cream('/handoff')}`);
     console.log('');
-    result = { shown: true, file: saved.file };
+    result = { shown: true, file: prepared.saved.file, receipt: prepared.receipt.file };
   } catch (err) {
     console.log(`  ${ember('!')} ${slate('Could not build the handoff: ' + err.message)}`);
   }
@@ -427,8 +459,8 @@ async function main() {
   await ui.brandReveal();
 
   // The welcome beat — warm, plain-language, and continuity-first. This is the
-  // "you made it" moment that frames what phewsh is FOR: one thread across every
-  // AI tool, so you switch harnesses mid-work and nothing gets re-explained.
+  // "you made it" moment that frames what phewsh is FOR: one recorded project
+  // thread across supported routes, with an explicit receipt at each boundary.
   // Non-technical readers get one inviting sentence; the cockpit rows below give
   // engineers the exact facts. Fail-soft: a missing piece shortens the line, it
   // never blocks the door.
@@ -439,13 +471,13 @@ async function main() {
       const dot = teal('●');
       const tools = `${toolCount} AI tool${toolCount !== 1 ? 's' : ''}`;
       if (hasProject && toolCount > 1) {
-        console.log(`  ${dot} ${sage('phew — you made it.')} ${slate('shh,')} ${cream(projectName)} ${sage(`and your ${tools} are aligned to one thread`)} ${slate('— switch mid-thought, nothing re-explained.')}`);
+        console.log(`  ${dot} ${sage('phew — you made it.')} ${slate('shh,')} ${cream(projectName)} ${sage(`and your ${tools} read the same project truth`)} ${slate('— each switch leaves a visible receipt.')}`);
       } else if (hasProject) {
-        console.log(`  ${dot} ${sage('phew — you made it.')} ${slate('shh,')} ${sage('one verified memory of')} ${cream(projectName)} ${sage('— ready for whatever tool you reach for next.')}`);
+        console.log(`  ${dot} ${sage('phew — you made it.')} ${slate('shh,')} ${sage('project truth loaded for')} ${cream(projectName)} ${sage('— ready for whatever tool you reach for next.')}`);
       } else if (toolCount > 1) {
         console.log(`  ${dot} ${sage(`phew — you made it.`)} ${slate('shh,')} ${sage(`time to align your ${tools} to you and get down to business.`)} ${cream('/init')} ${sage('to begin.')}`);
       } else if (toolCount === 1) {
-        console.log(`  ${dot} ${sage('phew — you made it.')} ${slate('shh,')} ${sage('add Codex or Gemini and phewsh keeps every tool aligned to you.')}`);
+        console.log(`  ${dot} ${sage('phew — you made it.')} ${slate('shh,')} ${sage('add Codex or Gemini and phewsh will project the same recorded truth through supported adapters.')}`);
       } else {
         console.log(`  ${dot} ${sage('phew — you made it.')} ${slate('shh,')} ${sage('install Claude Code, Codex, or Gemini and phewsh keeps them aligned to you.')}`);
       }
@@ -465,7 +497,7 @@ async function main() {
 
   // ── Mission control: the whole state of your AI work, one screen ──────
   // PROJECT what am I in · ROUTE where typing goes · BACKUP what's ready if
-  // the route hits a wall · WEB am I mirrored · RECORD what's accumulated
+  // the route hits a wall · WEB is cloud explicitly linked · RECORD what exists
   let syncState = null;
   const row = (label, value) => console.log(`  ${slate(label.padEnd(9))}${value}`);
 
@@ -500,7 +532,7 @@ async function main() {
   } else if (atHome || recents.length > 0) {
     row('PROJECT', slate('none here — your projects are listed below'));
   } else {
-    row('PROJECT', cream(projectName) + slate(' · no memory yet — ') + sage('/init') + slate(' fast · ') + sage('/clarify') + slate(' guided'));
+    row('PROJECT', cream(projectName) + slate(' · no .intent/ yet — ') + sage('/init') + slate(' fast · ') + sage('/clarify') + slate(' guided'));
   }
 
   row('ROUTE', route
@@ -513,7 +545,7 @@ async function main() {
   if (config?.apiKey && route?.type !== 'api') backupParts.push(`${teal('✓')} ${sage('direct API')}`);
   workOnly.forEach(h => backupParts.push(sage(h.label) + slate(' /work')));
   row('BACKUP', backupParts.length > 0
-    ? backupParts.join(slate(' · ')) + slate('  — context travels if the route hits a wall')
+    ? backupParts.join(slate(' · ')) + slate('  — fresh brief on fallback; failed-tool transcript stays put')
     : slate('none — install Codex or Gemini to cover usage limits'));
 
   if (config?.supabaseUserId) {
@@ -541,7 +573,7 @@ async function main() {
     row('WEB', cream(config.email || 'logged in') + slate(' · ') + syncLabel
       + (cloudCount !== null ? slate(' · ') + sage(`${cloudCount} cloud project${cloudCount !== 1 ? 's' : ''}`) : ''));
   } else {
-    row('WEB', sage('local-only (works fine)') + slate(' · /login mirrors this at phewsh.com/intent'));
+    row('WEB', sage('local-only (works fine)') + slate(' · /login enables explicit cloud sync + Ion'));
   }
 
   // VERIFIED — the product thesis made visible: what's actually true in this
@@ -551,7 +583,7 @@ async function main() {
     if (!v.available) {
       row('VERIFIED', slate('not a git repo here — ') + sage('/truth') + slate(' audits whatever is present'));
     } else {
-      const parts = [cream('HEAD ' + v.shortHead)];
+      const parts = [v.shortHead ? cream('HEAD ' + v.shortHead) : cream('Git repo · no commits yet')];
       parts.push(v.dirtyCount ? peach(`${v.dirtyCount} uncommitted`) : sage('clean'));
       if (v.driftCommits > 0) parts.push(ember(`⚠ ${v.driftCommits} commit${v.driftCommits !== 1 ? 's' : ''} since .intent updated`));
       // Sharper than recency: the docs still name an older version than shipped.
@@ -570,7 +602,7 @@ async function main() {
       : slate(' · ') + peach('none judged yet — tell it what you kept');
     row('RECORD', cream(`${oStats.total} routed`) + tail + slate(' — /outcomes'));
   } else {
-    row('RECORD', slate('empty — phewsh starts logging what you route as you work'));
+    row('RECORD', slate('empty — /remember writes .intent/decisions.md · routes leave local receipts'));
   }
   } catch (cockpitErr) {
     console.log(`  ${slate('(cockpit row unavailable — ' + cockpitErr.message + ' · PHEWSH_DEBUG=1 phewsh for details)')}`);
@@ -588,7 +620,7 @@ async function main() {
   function showModeMenu() {
     console.log(`  ${b(cream('What are you trying to do?'))}`);
     console.log(`  ${teal('1')} ${sage('Build')}  ${slate('·')}  ${teal('2')} ${sage('Research')}  ${slate('·')}  ${teal('3')} ${sage('Decide')}  ${slate('·')}  ${teal('4')} ${sage('Review')}  ${slate('·')}  ${teal('5')} ${sage('Ask another model')}`);
-    console.log(`  ${slate('pick a number, or just type — your context travels with every route')}`);
+    console.log(`  ${slate('pick a number, or just type — routes get recorded project state; prior tool transcripts stay put')}`);
     // One quiet line to the deeper power, without dumping the whole command list:
     // the moves that make phewsh more than a chat box — true continuity across
     // harnesses. /help opens everything when they're ready.
@@ -662,12 +694,12 @@ async function main() {
     try {
       if (!selfheal.isStale()) return;
       const h = selfheal.heal();
-      if (h.healed) console.log(`  ${teal('↻')} ${sage('Synced .intent/ across your harness files — kept current automatically')}`);
+      if (h.healed) console.log(`  ${teal('↻')} ${sage('Refreshed supported native context files from .intent/.')}`);
     } catch { /* self-heal is a nicety, never a blocker */ }
   }
 
-  // "Nothing lost" — surface where you left off, across every tool, so opening
-  // phewsh feels like resuming a thread rather than starting cold.
+  // Surface the local decision/outcome record across recorded routes. This is
+  // continuity evidence, not a transcript or hidden-memory transfer.
   function showContinuity() {
     try {
       const decisions = recentDecisions(50, { project: projectName });
@@ -757,7 +789,7 @@ async function main() {
       }
     }
     if (candidates.length > 0) {
-      console.log(`  ${teal('●')} ${sage(`${candidates.length} likely candidate${candidates.length !== 1 ? 's' : ''} — no shared memory yet:`)}`);
+      console.log(`  ${teal('●')} ${sage(`${candidates.length} likely candidate${candidates.length !== 1 ? 's' : ''} — no shared project truth yet:`)}`);
       for (const p of candidates) {
         bootstrapChoices.push({ kind: 'open', path: p.path });
         console.log(`  ${teal(String(bootstrapChoices.length))} ${cream(p.name)} ${slate('· ' + tildify(p.path) + ' · ' + p.reason)}`);
@@ -910,8 +942,8 @@ async function main() {
     }
   }
 
-  // Fallbacks are a first-class flow: the route changes, the context and
-  // record do not. Ask by default; auto-switch only if setup said so.
+  // Fallbacks are a first-class flow: the route changes and receives a freshly
+  // verified project brief. The failed tool's private transcript does not move.
   async function offerFallbacks(input, fullSystem, failedId) {
     if (lastTurnFailure?.duplicate && lastTurnFailure.harnessId === failedId) {
       return;
@@ -926,7 +958,7 @@ async function main() {
     }
 
     if (options.length === 0) {
-      console.log(`  ${sage('No fallback ready.')} ${slate('Install Codex or Gemini, or add an API key with /key — context would travel automatically.')}`);
+      console.log(`  ${sage('No fallback ready.')} ${slate('Install Codex or Gemini, or add an API key with /key — a fallback gets a fresh project brief, not the failed tool transcript.')}`);
       console.log('');
       return;
     }
@@ -934,7 +966,7 @@ async function main() {
     if (config?.fallback === 'auto') {
       const fb = options[0];
       const fbLabel = fb === 'api' ? 'direct API' : HARNESSES[fb].label;
-      console.log(`  ${peach('↻')} ${sage('auto-fallback →')} ${cream(fbLabel)} ${slate('· same context, same record')}`);
+      console.log(`  ${peach('↻')} ${sage('auto-fallback →')} ${cream(fbLabel)} ${slate('· fresh project brief; failed-tool transcript stays put')}`);
       const ok = fb === 'api'
         ? await runApiTurn(input, fullSystem)
         : await runHarnessTurn(input, fb, fullSystem);
@@ -1200,7 +1232,7 @@ async function main() {
           intentFiles = loadIntentContext();
           systemPrompt = buildSystemPrompt(intentFiles);
           console.log(`  ${green('✓')} ${sage('Applied the approved diff to ' + r.target + '.')}`);
-          console.log(`  ${slate(synced.length ? 'Synced every tool from the approved change: ' + synced.join(', ') + '.' : 'Intent updated; tool context already current.')}`);
+          console.log(`  ${slate(synced.length ? 'Updated supported context files from the approved change: ' + synced.join(', ') + '.' : 'Intent updated; supported context files already current.')}`);
         } else {
           console.log(`  ${ember('!')} ${sage('Reconciliation was not applied: ' + r.reason)}`);
         }
@@ -1416,7 +1448,7 @@ async function main() {
         // verified brief that the next AI tool inherits — the continuity promise
         // made visible on the way out. Only in a real project; never blocks exit.
         if (intentFiles.length > 0) {
-          await showHandoff({ projectName, route: route?.id, reason: 'carry this into your next tool', nextHint: false });
+          await showHandoff({ projectName, route: route?.id, reason: 'carry this into your next tool', nextHint: false, trigger: 'clean-exit' });
         }
         try { require('../lib/intro').farewell(); } catch { /* sign-off is a nicety */ }
         console.log(`  ${sage('session ended · ' + turns + ' exchanges · ' + (totalPromptTokens + totalCompletionTokens) + ' tokens')}`);
@@ -1560,7 +1592,8 @@ async function main() {
 
       // ── /thread ────────────────────────────────────────
       // The cross-tool thread: one continuous record of your work, whichever
-      // tool ran each step. The "nothing lost" proof, made visible.
+      // route ran each recorded step. This is local receipt evidence, not a
+      // transcript or proof that hidden tool memory crossed the boundary.
       if (cmd === 'thread' || cmd === 'continuity') {
         const decisions = recentDecisions(50, { project: projectName });
         const thread = continuity.threadFor(decisions, { project: projectName });
@@ -1572,7 +1605,7 @@ async function main() {
           return;
         }
         const tools = continuity.toolsInThread(decisions, { project: projectName });
-        console.log(`  ${b(cream('Your thread'))} ${slate('— ' + projectName + ' · phewsh remembers across every tool')}`);
+        console.log(`  ${b(cream('Your thread'))} ${slate('— ' + projectName + ' · local receipts across recorded routes')}`);
         ui.divider('line');
         for (const d of thread.slice(0, 12)) {
           const ago = continuity.agoText(d.ts).padEnd(9);
@@ -1586,7 +1619,7 @@ async function main() {
         }
         ui.divider('line');
         const span = tools >= 2 ? `${tools} tools, one thread` : `${tools} tool`;
-        console.log(`  ${sage(thread.length + ' action' + (thread.length !== 1 ? 's' : '') + ' · ' + span + ' · nothing re-explained')}`);
+        console.log(`  ${sage(thread.length + ' action' + (thread.length !== 1 ? 's' : '') + ' · ' + span + ' · visible in Phewsh\'s local record')}`);
         console.log('');
         rl.prompt();
         return;
@@ -1673,13 +1706,13 @@ async function main() {
           console.log(`  ${sage('the loop: define .intent/ → sync → work → evolve → repeat')}`);
           console.log('');
           console.log(`  ${cream('the essentials')}`);
-          console.log(`    ${teal('just type')}      ${sage('chat — your .intent/ context travels with every route')}`);
+          console.log(`    ${teal('just type')}      ${sage('chat — the selected route gets a fresh recorded-project brief')}`);
           console.log(`    ${teal('/next')}          ${sage('not sure? phewsh names the next step worth taking')}`);
           console.log(`    ${teal('/use')} ${slate('<tool>')}   ${sage('route through Claude Code, Codex, Gemini… (their login, no key)')}`);
           console.log(`    ${teal('@name')} ${slate('<msg>')}   ${sage('one message to one tool — @codex review this')}`);
           console.log(`    ${teal('/work')} ${slate('[tool]')}  ${sage('hand off to the full interactive tool, outcome on return')}`);
           console.log(`    ${teal('/clarify')}       ${sage('turn messy thoughts into .intent/ artifacts')}`);
-          console.log(`    ${teal('/scan')}          ${sage('find your projects — and repos that need shared memory')}`);
+          console.log(`    ${teal('/scan')}          ${sage('find your projects — and repos that need shared project truth')}`);
           console.log(`    ${teal('/outcomes')}      ${sage('label what you kept — the record that gets smarter')}`);
           console.log('');
           console.log(`  ${slate('/help all')} ${sage('everything')}  ${slate('·')}  ${slate('/tour')} ${sage('walkthrough')}  ${slate('·')}  ${slate('/quit')} ${sage('exit')}`);
@@ -1693,14 +1726,14 @@ async function main() {
         console.log('');
         console.log(`  ${cream('not sure what to do?')}`);
         console.log(`    ${teal('/next')}        ${sage("phewsh reads your state and hands back the next step worth taking")}`);
-        console.log(`    ${teal('/thread')}      ${sage('where you left off — your work across every tool, one record')}`);
+        console.log(`    ${teal('/thread')}      ${sage('where local receipts say you left off across routes')}`);
         console.log(`    ${teal('/learn')}       ${sage('what your record taught — which tool keeps best, by kind of work')}`);
         console.log('');
         console.log(`  ${cream('author .intent/')}`);
         console.log(`    ${teal('/scan')}        ${sage('Find your projects — and likely candidates with no .intent/ yet')}`);
         console.log(`    ${teal('/init')}        ${sage('Create .intent/ for this project')}`);
         console.log(`    ${teal('/intent')}      ${sage('Pause and reflect — view or update .intent/ before moving on')}`);
-        console.log(`    ${teal('/remember')}    ${sage('Jot a decision to .intent/decisions.md — every tool inherits it')}`);
+        console.log(`    ${teal('/remember')}    ${sage('Jot a decision to .intent/decisions.md for supported adapters to read')}`);
         console.log(`    ${teal('/truth')}       ${sage('Read-only audit of versions, Git, intent, projections, and conflicts')}`);
         console.log(`    ${teal('/brief')}       ${sage('Generate the current provider-ready verified briefing')}`);
         console.log(`    ${teal('/wrap')}        ${sage('Observe changes, contradictions, unknowns, and reconciliation needs')}`);
@@ -1710,11 +1743,11 @@ async function main() {
         console.log(`    ${teal('/context')}     ${sage('Show loaded .intent/ files')}`);
         console.log(`    ${teal('/reload')}      ${sage('Reload .intent/ from disk')}`);
         console.log('');
-        console.log(`  ${cream('sync everywhere')}`);
-        console.log(`    ${teal('/seq')}          ${sage('Sequence all memory → optimal context')}`);
-        console.log(`    ${teal('/seq claude')}   ${sage('Sequence → write to CLAUDE.md')}`);
-        console.log(`    ${teal('/watch')}       ${sage('Sync .intent/ → native harness files + cloud (background)')}`);
-        console.log(`    ${teal('/export')}      ${sage('Export .intent/ for any AI tool')}`);
+        console.log(`  ${cream('update adapters')}`);
+        console.log(`    ${teal('/seq')}          ${sage('Render a bounded brief from project-owned .intent/')}`);
+        console.log(`    ${teal('/seq claude')}   ${sage('Preview the bounded CLAUDE.md projection')}`);
+        console.log(`    ${teal('/watch')}       ${sage('While running: refresh native files; signed-in cloud push unless --no-push')}`);
+        console.log(`    ${teal('/export')}      ${sage('Export .intent/ for a manual or compatible-tool handoff')}`);
         console.log(`    ${teal('/push')}        ${sage('Push to phewsh.com/intent')}`);
         console.log(`    ${teal('/pull')}        ${sage('Pull from cloud (reloads context)')}`);
         console.log(`    ${teal('/serve')}       ${sage('Execution bridge for phewsh.com/intent')}`);
@@ -1723,7 +1756,7 @@ async function main() {
         console.log('');
         console.log(`  ${cream('route — where your typing goes')}`);
         console.log(`    ${teal('/use')} ${slate('<route>')}  ${sage('Switch: claude-code, codex, gemini, cursor, opencode, api')}`);
-        console.log(`    ${teal('@name')} ${slate('<msg>')}  ${sage('One message to one harness — @codex review this — context stays shared')}`);
+        console.log(`    ${teal('@name')} ${slate('<msg>')}  ${sage('One message + recorded project state; tool transcripts stay separate')}`);
         console.log(`    ${teal('/council')} ${slate('<q>')} ${sage('Ask ALL installed harnesses in parallel; keep the best answer')}`);
         console.log(`    ${teal('/harnesses')}   ${sage('Agent CLIs detected on this machine')}`);
         console.log(`    ${teal('/provider')}    ${sage('Current route + what\'s available')}`);
@@ -1748,7 +1781,7 @@ async function main() {
         console.log(`    ${teal('/tour')}        ${sage('Quick walkthrough')}`);
         console.log('');
         console.log(`  ${cream('run in your terminal')} ${slate('— machine setup, run outside a session (not as /cmd)')}`);
-        console.log(`    ${teal('phewsh ambient on')}     ${sage("Every AI tool inherits your .intent/ — even without launching phewsh")}`);
+        console.log(`    ${teal('phewsh ambient on')}     ${sage('Preview/install removable adapters for supported tools')}`);
         console.log(`    ${teal('phewsh shim on')}        ${sage('A phewsh status banner before each tool launches — visible proof')}`);
         console.log(`    ${teal('phewsh update auto on')} ${sage('Auto-update in the background on launch (default: notify-only)')}`);
         console.log(`    ${teal('phewsh setup')}          ${sage('Guided setup — pick your default route')}`);
@@ -2382,7 +2415,7 @@ async function main() {
           rl.resume();
           pasteMode(true);
           console.log('');
-          console.log(`  ${teal('●')} ${sage('Back in phewsh.')} ${slate('/intent view to see the result — agents pick it up automatically')}`);
+          console.log(`  ${teal('●')} ${sage('Back in phewsh.')} ${slate('/intent view to see the recorded update — supported adapters can read it; native transcripts do not move')}`);
           console.log('');
           rl.prompt();
           return;
@@ -2441,7 +2474,15 @@ async function main() {
         const prompt = buildHarnessPrompt(messages, cmdArg);
         turnInFlight = true;
         const settled = await Promise.allSettled(members.map(m =>
-          runViaHarness(m.id, councilSystem, prompt, { quiet: true })
+          runViaHarness(m.id, councilSystem, prompt, {
+            quiet: true,
+            // /model is a preference for the active harness. Carry it into
+            // that member's council turn without feeding a Claude-only alias
+            // (for example `fable`) to Codex or Gemini.
+            model: route?.type === 'harness' && route.id === m.id
+              ? harnessModel
+              : undefined,
+          })
         ));
         turnInFlight = false;
         if (userCancelled) {
@@ -2501,7 +2542,7 @@ async function main() {
         if (route?.type === 'api') rows.push(['Model', modelName(currentModel), 'cyan']);
         if (route?.type === 'harness' && harnessModel) rows.push(['Model', `${harnessModel} — passed to ${HARNESSES[route.id].label}`, 'cyan']);
         ui.statusPanel('Provider', rows);
-        console.log(`  ${sage('One terminal. Every AI worker. Shared project memory.')}`);
+        console.log(`  ${sage('One terminal. Multiple AI workers. One recorded project truth.')}`);
         console.log(`  ${slate('switch:')} ${cream('/use <' + useOptions().join('|') + '>')} ${slate('· interactive tools: /work <hermes|pi>')}`);
         console.log('');
         rl.prompt();
@@ -2515,9 +2556,9 @@ async function main() {
           config.fallback = arg;
           saveConfig(config);
           console.log(`  ${teal('●')} ${sage('Fallback:')} ${cream(arg === 'auto' ? 'auto-switch to the next route on failure' : 'ask before switching')}`);
-          console.log(`  ${slate('either way your project context and record stay intact')}`);
+          console.log(`  ${slate('the next route gets a fresh project brief; the failed tool transcript stays put')}`);
         } else {
-          console.log(`  ${sage('Fallback is')} ${cream(config?.fallback === 'auto' ? 'auto-switch' : 'ask first')} ${slate('— when your route hits a usage wall, context travels to the next one.')}`);
+          console.log(`  ${sage('Fallback is')} ${cream(config?.fallback === 'auto' ? 'auto-switch' : 'ask first')} ${slate('— the next route gets a fresh project brief, not the failed tool transcript.')}`);
           console.log(`  ${sage('Usage:')} ${cream('/fallback ask')} ${slate('·')} ${cream('/fallback auto')}`);
         }
         rl.prompt();
@@ -2601,7 +2642,7 @@ async function main() {
         if (learned) console.log(`  ${teal('↪')} ${sage(learned)} ${slate('— route accordingly')}`);
         console.log(`  ${sage('keep your tools, keep one record:')}`);
         console.log(`    ${teal('/use')} ${slate('<id>')}     ${sage('route your typing through that tool')}`);
-        console.log(`    ${teal('@<id>')} ${slate('<msg>')}   ${sage('one message to one tool — context stays shared')}`);
+        console.log(`    ${teal('@<id>')} ${slate('<msg>')}   ${sage('one message + recorded project state; transcripts stay separate')}`);
         console.log(`    ${teal('/council')} ${slate('<q>')}  ${sage('ask every installed tool at once, keep the best answer')}`);
         console.log('');
         rl.prompt();
@@ -2716,9 +2757,15 @@ async function main() {
 
         const preflightTruth = await auditTruth();
         const before = captureSnapshot(preflightTruth);
-        const generatedBrief = await generateBrief({ report: preflightTruth });
-        const launchBrief = `${generatedBrief.content}\n\nYou are receiving a PHEWSH handoff brief — acknowledge in one short line that you've loaded it, then proceed. Use it as project context, preserve native tool behavior, and verify claims against the repository before acting. When you finish, exit this tool — PHEWSH resumes, runs an automatic postflight comparing what changed against this brief, and offers reconciliation.\n\nAmbient guidance: the human may not know any phewsh commands — make the layer felt, not invoked. Do their request first; when you make a real decision, ship something, or change direction, offer in plain language to keep the shared record current ("want me to reconcile this into phewsh so your other tools inherit it?"). Keep it subtle, never nag. When phewsh context shaped your reply, sign off quietly with 😮‍💨🤫 so they feel the continuity layer working.`;
-        const savedBrief = persistBrief(generatedBrief.content, { project: projectName, route: target });
+        const prepared = await prepareHandoff({
+          report: preflightTruth,
+          projectName,
+          fromRoute: route?.type === 'harness' ? route.id : (route?.type || 'phewsh'),
+          toRoute: target,
+          trigger: 'work-start',
+        });
+        const launchBrief = `${prepared.content}\n\nYou are receiving a PHEWSH handoff brief — acknowledge in one short line that you've loaded it, then proceed. Use it as project context, preserve native tool behavior, and verify claims against the repository before acting. When you finish, exit this tool — PHEWSH resumes, runs an automatic postflight comparing what changed against this brief, and offers reconciliation.\n\nAmbient guidance: the human may not know any phewsh commands — make the layer felt, not invoked. Do their request first; when you make a real decision, ship something, or change direction, offer in plain language to keep the shared record current ("want me to reconcile this into phewsh so supported adapters can read it from .intent/?"). Keep it subtle, never nag. When phewsh context shaped your reply, sign off quietly with 😮‍💨🤫 so they feel the continuity layer working.`;
+        const savedBrief = prepared.saved;
         const launch = interactiveLaunchArgs(target, launchBrief, { model: harnessModel });
         // Foolproof fallback: the brief on the clipboard survives the native
         // tool taking over the terminal and any trust/permission gate. If the
@@ -2738,6 +2785,7 @@ async function main() {
         console.log(`  ${sage('Git:')} ${cream(preflightTruth.git.shortHead || 'unknown')} ${slate('· ' + before.dirty.length + ' uncommitted path(s) before work')}`);
         console.log(`  ${sage('Truth:')} ${preflightTruth.conflicts.length ? peach(preflightTruth.conflicts.length + ' conflict(s) carried explicitly') : green('no explicit conflicts')}`);
         console.log(`  ${sage('Brief:')} ${launch.briefingPassed ? green('auto-attached to ' + h.label) : peach('not auto-injectable for this tool')}${briefOnClipboard ? slate(' · copied to your clipboard') : ''}`);
+        console.log(`  ${sage('Receipt:')} ${prepared.verification ? green(handoffSummary(prepared.verification)) : peach('unavailable — launch continues honestly')}`);
         console.log(`  ${sage('Record:')} ${savedBrief.written ? slate('exact briefing saved locally' + (savedBrief.file ? ' → ' + savedBrief.file : '')) : peach('briefing persistence unavailable; launch continues')}`);
         if (briefOnClipboard) {
           console.log(`  ${slate('Foolproof:')} ${sage('if ' + h.label + ' shows a trust prompt or doesn\'t mention the brief, just paste it in')} ${slate('(⌘V / Ctrl+V)')}`);
@@ -2756,6 +2804,8 @@ async function main() {
           briefingHash: savedBrief.hash,
           briefingFile: savedBrief.file,
           briefingPassed: launch.briefingPassed,
+          handoffReceiptId: prepared.verification?.id || null,
+          handoffReceiptFile: prepared.receipt.file,
         });
         pasteMode(false);
         rl.pause();
@@ -2803,7 +2853,7 @@ async function main() {
             console.log('');
             console.log(`  ${ember('⚠')} ${sage('Your project understanding may now be stale:')}`);
             console.log(`    ${slate(truthDrift[0])}`);
-            console.log(`  ${sage('Bring the record up to date so the next tool inherits the truth →')} ${cream('/reconcile')} ${slate('(proposes an exact diff; writes only after you approve)')}`);
+            console.log(`  ${sage('Bring the record up to date so the next supported adapter can read it →')} ${cream('/reconcile')} ${slate('(proposes an exact diff; writes only after you approve)')}`);
           }
         } catch { /* the offer is a nicety, never a blocker */ }
         console.log('');
@@ -2862,7 +2912,7 @@ async function main() {
 
       if (cmd === 'remember') {
         // Record's zero-AI verb: jot a decision/lesson to .intent/decisions.md
-        // so it sticks and every tool inherits it. No model needed.
+        // so it sticks in the portable project record. No model needed.
         const rec = require('../lib/record');
         const text = cmdArg.replace(/^["']|["']$/g, '').trim();
         console.log('');
@@ -2876,7 +2926,7 @@ async function main() {
           }
         } else {
           const r = rec.remember(text);
-          if (r) console.log(`  ${green('✓')} ${sage('Remembered.')} ${slate('Every tool reading .intent/ now sees it. · .intent/decisions.md')}`);
+          if (r) console.log(`  ${green('✓')} ${sage('Remembered.')} ${slate('Supported adapters can read it from .intent/. · .intent/decisions.md')}`);
           else console.log(`  ${slate('Could not write .intent/decisions.md here.')}`);
         }
         console.log('');

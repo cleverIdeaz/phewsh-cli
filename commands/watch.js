@@ -65,10 +65,32 @@ async function pushToCloud(config) {
 
 // ── File Watcher ────────────────────────────────────────────────────────────
 
-function watchIntent() {
+function watchIntent({ watch = fs.watch, onError = () => {} } = {}) {
   let debounceTimer = null;
   let syncInProgress = false;
   let pendingSync = false;
+  let failed = false;
+  const watchers = [];
+
+  function close() {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    for (const watcher of watchers) {
+      try { watcher.close(); } catch { /* already closed */ }
+    }
+  }
+
+  function fail(err) {
+    if (failed) return;
+    failed = true;
+    close();
+    onError(err);
+  }
+
+  function addWatcher(dir, listener) {
+    const watcher = watch(dir, { recursive: false }, listener);
+    if (typeof watcher.on === 'function') watcher.on('error', fail);
+    watchers.push(watcher);
+  }
 
   async function onFileChange(filename) {
     // Skip temp files and hidden files
@@ -120,23 +142,36 @@ function watchIntent() {
   }
 
   // Watch the .intent/ directory
-  const watcher = fs.watch(INTENT_DIR, { recursive: false }, (eventType, filename) => {
-    onFileChange(filename);
-  });
-
-  // Also watch subdirectories if any exist
   try {
+    addWatcher(INTENT_DIR, (eventType, filename) => {
+      onFileChange(filename);
+    });
+
+    // Also watch subdirectories if any exist.
     const entries = fs.readdirSync(INTENT_DIR, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        fs.watch(path.join(INTENT_DIR, entry.name), { recursive: false }, (eventType, filename) => {
+        addWatcher(path.join(INTENT_DIR, entry.name), (eventType, filename) => {
           onFileChange(`${entry.name}/${filename}`);
         });
       }
     }
-  } catch { /* ignore */ }
+  } catch (err) {
+    close();
+    throw err;
+  }
 
-  return watcher;
+  return { close };
+}
+
+function formatWatchFailure(err) {
+  const reason = err?.code === 'EMFILE'
+    ? 'This machine has too many open file watchers.'
+    : `File watching failed${err?.message ? `: ${err.message}` : '.'}`;
+  return [
+    `${reason} The initial sync completed, but continuous watching did not start.`,
+    'Run `phewsh seq --write` for a one-shot local refresh, close unused watchers, then retry `phewsh watch`.',
+  ];
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
@@ -211,7 +246,18 @@ async function main() {
   console.log('');
 
   // Start watching
-  const watcher = watchIntent();
+  let watcher;
+  const watchFailed = (err) => {
+    for (const line of formatWatchFailure(err)) console.log(`  ${yellow('!')} ${g(line)}`);
+    console.log('');
+    process.exitCode = 1;
+  };
+  try {
+    watcher = watchIntent({ onError: watchFailed });
+  } catch (err) {
+    watchFailed(err);
+    return;
+  }
 
   // Clean exit
   process.on('SIGINT', () => {
@@ -222,3 +268,5 @@ async function main() {
 }
 
 module.exports = main;
+module.exports.watchIntent = watchIntent;
+module.exports.formatWatchFailure = formatWatchFailure;

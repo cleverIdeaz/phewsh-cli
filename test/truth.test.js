@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { auditTruth, fetchNpmLatest, formatTruth, quickVersionDrift } = require('../lib/truth');
+const { auditTruth, fetchNpmLatest, formatTruth, quickVerifiedState, quickVersionDrift } = require('../lib/truth');
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-truth-'));
@@ -85,6 +85,20 @@ test('status.md current at HEAD does not trigger a false staleness conflict', as
   assert.ok(!report.conflicts.some(item => /status\.md was last updated/.test(item)));
 });
 
+test('an initialized repository without a first commit is still verified as a Git repo', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-truth-unborn-'));
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  fs.writeFileSync(path.join(root, 'first.txt'), 'not committed yet\n');
+
+  const state = quickVerifiedState(root);
+  assert.equal(state.available, true);
+  assert.equal(state.isRepo, true);
+  assert.equal(state.shortHead, null);
+  assert.equal(state.dirtyCount, 1);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('npm latest explicitly degrades to unknown offline', async () => {
   const latest = await fetchNpmLatest('phewsh', {
     fetchImpl: async () => { throw new Error('offline'); },
@@ -103,6 +117,10 @@ test('quickVersionDrift flags docs behind shipped code, and stays quiet when cur
 
   // Docs caught up (max claim equals shipped) → no false alarm, even with old refs in history.
   fs.writeFileSync(path.join(root, '.intent', 'status.md'), '# Status\nShipped `0.15.62`; earlier `0.15.55` is history.\n');
+  assert.equal(quickVersionDrift(root), null);
+
+  // Explicitly archived release history never overrides the current claim.
+  fs.writeFileSync(path.join(root, '.intent', 'status.md'), '# Status\nCurrent `0.15.62`.\n\n## Archive\nPlanned `0.99.0`; old `0.1.0`.\n');
   assert.equal(quickVersionDrift(root), null);
 
   // No package version anywhere → nothing to compare, stays quiet.

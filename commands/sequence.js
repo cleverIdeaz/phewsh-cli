@@ -1,6 +1,6 @@
 // phewsh sequence (phewsh seq)
-// Universal Memory Transform — reads this directory's memory files plus the
-// user's global per-tool memory (read-only), emits optimal context per target.
+// Project context compiler — reads declared project sources plus optional
+// per-user tool context (read-only), then emits context for a chosen target.
 
 const fs = require('fs');
 const path = require('path');
@@ -49,20 +49,20 @@ function getPositionalTarget() {
 function showHelp() {
   console.log('');
   console.log(`  ${b(cream('phewsh sequence'))} ${slate('(phewsh seq)')}`);
-  console.log(`  ${sage('Universal Memory Transform — reads the memory files in this')}`);
-  console.log(`  ${sage('directory plus your global per-user memory across tools,')}`);
-  console.log(`  ${sage('then emits optimal context for any target agent.')}`);
+  console.log(`  ${sage('Project context compiler — reads declared project sources and')}`);
+  console.log(`  ${sage('optional per-user tool context, then emits a bounded briefing')}`);
+  console.log(`  ${sage('for a chosen target. .intent/ remains the project truth.')}`);
   console.log('');
   console.log(`  ${cream('reads')} ${slate('(read-only — phewsh never edits these)')}`);
   console.log(`    ${sage('project  .intent/, CLAUDE.md, AGENTS.md, GEMINI.md, .cursorrules,')}`);
-  console.log(`    ${sage('         copilot-instructions, README, + this project’s Claude memory')}`);
+  console.log(`    ${sage('         copilot-instructions, README, + this project’s Claude notes')}`);
   console.log(`    ${sage('global   ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md, ~/.gemini/GEMINI.md')}`);
-  console.log(`    ${slate('global memory is per-user and travels across every project.')}`);
+  console.log(`    ${slate('global context is per-user; it is not project truth or shared model memory.')}`);
   console.log('');
   console.log(`  ${cream('usage')}`);
-  console.log(`    ${teal('phewsh seq')}              ${sage('Sequence → stdout summary (project + global)')}`);
-  console.log(`    ${teal('phewsh seq')} ${slate('claude')}      ${sage('Sequence → CLAUDE.md section (project only)')}`);
-  console.log(`    ${teal('phewsh seq')} ${slate('-w')}          ${sage('Write to target file')}`);
+  console.log(`    ${teal('phewsh seq')}              ${sage('Compile → stdout summary (project + per-user context)')}`);
+  console.log(`    ${teal('phewsh seq')} ${slate('claude')}      ${sage('Compile → CLAUDE.md section (project only)')}`);
+  console.log(`    ${teal('phewsh seq')} ${slate('--write')}     ${sage('Refresh all native project files from .intent/')}`);
   console.log(`    ${teal('phewsh seq')} ${slate('--explain')}   ${sage('Show full ranking breakdown')}`);
   console.log(`    ${teal('phewsh seq')} ${slate('--dry-run')}   ${sage('Show sources found (with scope), no output')}`);
   console.log('');
@@ -72,7 +72,7 @@ function showHelp() {
   console.log(`  ${cream('options')}`);
   console.log(`    ${teal('--budget')} ${slate('<level>')}   ${sage('Token budget: minimal|standard|full|unlimited')}`);
   console.log(`    ${teal('--sources')} ${slate('<list>')}  ${sage('Limit sources: intent,claude-md,claude-memory')}`);
-  console.log(`    ${teal('--include-global')}    ${sage('Allow global memory into a written project file')}`);
+  console.log(`    ${teal('--include-global')}    ${sage('Allow per-user context into a written project file')}`);
   console.log(`    ${slate('                       (off by default — keeps personal notes out of committed files)')}`);
   console.log(`    ${teal('--write, -w')}         ${sage('Write output to target file')}`);
   console.log(`    ${teal('--explain, -e')}       ${sage('Full ranking breakdown')}`);
@@ -109,8 +109,21 @@ async function main() {
     }
     ui.divider('line');
     console.log(`  ${slate(`${projectCount} project · ${globalCount} global`)}`);
-    console.log(`  ${slate('global = per-user memory across all tools; summary-only unless --include-global on write')}`);
+    console.log(`  ${slate('global = per-user tool context; summary-only unless --include-global on write')}`);
     console.log('');
+    return;
+  }
+
+  // Explicit one-shot cross-harness refresh. Plain `phewsh seq` remains the
+  // read-only summary; --write is the deliberate project-file mutation.
+  if (flags.write && !flags.target) {
+    const selfheal = require('../lib/selfheal');
+    const res = selfheal.syncContextFiles({ createMissing: true });
+    if (res.synced && res.synced.length) {
+      console.log(`\n  ${green('✓')} ${sage('Refreshed native project context:')} ${cream(res.synced.join(', '))}\n`);
+    } else {
+      console.log(`\n  ${slate('Native project context already current' + (res.reason ? ' (' + res.reason + ')' : ''))}\n`);
+    }
     return;
   }
 

@@ -16,7 +16,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const configFile = require('../lib/config-file');
 const supa = require('../lib/supabase');
-const { normalizeRemote, taskBranch, buildTaskPrompt, proposedOutcome } = require('../lib/team-tasks');
+const { normalizeRemote, taskBranch, taskLookupQuery, changedPathsFromPorcelain, buildTaskPrompt, proposedOutcome } = require('../lib/team-tasks');
 const { HARNESSES, listHarnesses } = require('../lib/harnesses');
 const { recordResultFile } = require('../lib/receipts-data');
 
@@ -181,7 +181,8 @@ async function listTasks(config) {
 async function reconcileTask(config, idArg) {
   if (!idArg) throw new Error('Usage: phewsh task reconcile <task-id>');
   const project = await loadProject(config);
-  const rows = await supa.select('tasks', `project_id=eq.${project.id}&id=like.${idArg}*&select=*`, config.supabaseAccessToken);
+  const rows = await supa.select('tasks', taskLookupQuery(project.id, idArg), config.supabaseAccessToken);
+  if (rows.length > 1) throw new Error(`Task prefix ${idArg} is ambiguous in this project. Use the full id.`);
   const task = rows[0];
   if (!task) throw new Error(`Task ${idArg} not found in this project.`);
   if (task.status !== 'merged') {
@@ -207,7 +208,7 @@ async function inviteTeammate(config, email) {
     project_id: project.id, email, invited_by: config.supabaseUserId,
   }, config.supabaseAccessToken);
   console.log(`\n  ${green('✓')} Invited ${w(email)} to ${w(project.name)}`);
-  console.log(`  ${g('They join with')} ${w('phewsh task join')} ${g('(CLI) or the Join banner on phewsh.com/intent/dashboard')}\n`);
+  console.log(`  ${g('They join with')} ${w('phewsh ion join')} ${g('(CLI) or the Join banner on phewsh.com/ion')}\n`);
 }
 
 async function joinProjects(config) {
@@ -257,12 +258,9 @@ async function claimTask(config, idArg, viaFlag) {
     if (!open.length) throw new Error('No open tasks to claim.');
     idArg = open[0].id;
   }
-  const candidates = await supa.select('tasks',
-    `project_id=eq.${project.id}&id=like.${idArg}*&select=*`, config.supabaseAccessToken)
-    .catch(() => []);
-  const task = candidates.length === 1
-    ? candidates[0]
-    : (await supa.select('tasks', `id=eq.${idArg}&select=*`, config.supabaseAccessToken))[0];
+  const candidates = await supa.select('tasks', taskLookupQuery(project.id, idArg), config.supabaseAccessToken);
+  if (candidates.length > 1) throw new Error(`Task prefix ${idArg} is ambiguous in this project. Use more of the id.`);
+  const task = candidates[0];
   if (!task) throw new Error(`Task ${idArg} not found in this project.`);
 
   const claimed = await supa.rpc('claim_task', { p_task_id: task.id }, config.supabaseAccessToken);
@@ -289,18 +287,22 @@ async function claimTask(config, idArg, viaFlag) {
   });
   const finishedAt = new Date().toISOString();
 
-  const dirty = spawnSync('git', ['status', '--porcelain'], { cwd: worktree, encoding: 'utf-8' }).stdout.trim();
-  if (run.status !== 0 && !dirty) {
+  const dirty = spawnSync('git', ['status', '--porcelain=v1', '-z'], { cwd: worktree, encoding: 'utf-8' }).stdout || '';
+  const hasChanges = Boolean(dirty.trim());
+  if (run.status !== 0 && !hasChanges) {
     await supa.rpc('complete_execution', { p_task_id: claimed.id, p_success: false, p_metadata: { reason: 'harness_failed', exit: run.status } }, config.supabaseAccessToken);
     throw new Error(`${HARNESSES[harnessId].label} exited ${run.status} with no changes — task marked failed.`);
   }
-  if (!dirty) {
+  if (!hasChanges) {
     await supa.rpc('complete_execution', { p_task_id: claimed.id, p_success: false, p_metadata: { reason: 'no_changes' } }, config.supabaseAccessToken);
     throw new Error('The run produced no changes — nothing to propose. Task marked failed (honestly).');
   }
 
   // Provisional proposed outcome ON THE BRANCH — truth only after merge.
-  const outcome = proposedOutcome({ task: claimed, harnessId, host, startedAt, finishedAt });
+  const outcomePath = `.intent/work/task-${claimed.id}.json`;
+  const changedFiles = changedPathsFromPorcelain(dirty);
+  if (!changedFiles.includes(outcomePath)) changedFiles.push(outcomePath);
+  const outcome = proposedOutcome({ task: claimed, harnessId, host, branch, changedFiles, startedAt, finishedAt });
   const workDir = path.join(worktree, '.intent', 'work');
   fs.mkdirSync(workDir, { recursive: true });
   fs.writeFileSync(path.join(workDir, `task-${claimed.id}.json`), JSON.stringify(outcome, null, 2) + '\n');
@@ -309,7 +311,11 @@ async function claimTask(config, idArg, viaFlag) {
   git(['add', '-A'], worktree);
   git(['commit', '-m', `task ${claimed.id.slice(0, 8)}: ${claimed.title}\n\nProposed via phewsh task claim (${harnessId} on ${host}). Provisional until merged.`], worktree);
   git(['push', '-u', 'origin', branch], worktree);
-  await supa.rpc('complete_execution', { p_task_id: claimed.id, p_success: true, p_metadata: { harness: harnessId } }, config.supabaseAccessToken);
+  await supa.rpc('complete_execution', {
+    p_task_id: claimed.id,
+    p_success: true,
+    p_metadata: { harness: harnessId, ...outcome.evidence },
+  }, config.supabaseAccessToken);
 
   const prBody = [
     `Shared phewsh task \`${claimed.id}\`: ${claimed.title}`,
