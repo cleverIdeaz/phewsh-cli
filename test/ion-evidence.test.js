@@ -39,7 +39,7 @@ test('Ion evidence rejects executable URLs and bounds untrusted metadata', () =>
 });
 
 test('Ion page escapes normalized evidence and labels unavailable proof honestly', () => {
-  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'ion', 'index.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'ion', 'classic.html'), 'utf8');
   assert.match(html, /PhewshIonEvidence\.normalizeTaskEvidence/);
   assert.match(html, /Not recorded by worker/);
   assert.match(html, /href="\$\{escapeHtml\(evidence\.prUrl\)\}"/);
@@ -48,7 +48,7 @@ test('Ion page escapes normalized evidence and labels unavailable proof honestly
 });
 
 test('Ion local run stays an explicit loopback claim with project-scoped ids', () => {
-  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'ion', 'index.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'ion', 'classic.html'), 'utf8');
   assert.match(html, /task\.status === "open" && bridgeServes\(project\)/);
   assert.match(html, /Run on this machine/);
   assert.match(html, /fetch\("http:\/\/localhost:7483\/claim"/);

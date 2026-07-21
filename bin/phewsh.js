@@ -232,8 +232,19 @@ function checkForUpdates() {
     .finally(() => { _updateDone = true; });
 }
 
-// Always check for updates (non-blocking)
-const updatePromise = checkForUpdates();
+// Proof usage/help errors are deliberately local: they must not touch auth or
+// the network just to explain the operator. Real prepare/verify runs already
+// contact the configured MCP origin, so the ordinary update check is harmless
+// there.
+const proofMode = command === 'mcp' && args[1] === 'proof' ? (args[2] || 'help') : '';
+const skipUpdateCheck = proofMode && !['prepare', 'verify'].includes(proofMode);
+let updatePromise;
+if (skipUpdateCheck) {
+  _updateDone = true;
+  updatePromise = Promise.resolve();
+} else {
+  updatePromise = checkForUpdates();
+}
 
 function exitAfterUpdate(code = 0) {
   // If update check already resolved, exit now

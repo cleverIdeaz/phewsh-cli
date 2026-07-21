@@ -54,7 +54,7 @@ test('`phewsh ion` rejects unknown subcommands with help', () => {
 
 test('Ion web setup and the public proof use the durable two-person operator script', () => {
   const root = path.join(__dirname, '..', '..');
-  const page = fs.readFileSync(path.join(root, 'ion', 'index.html'), 'utf-8');
+  const page = fs.readFileSync(path.join(root, 'ion', 'classic.html'), 'utf-8');
   const script = fs.readFileSync(path.join(root, 'handoffs', 'ION_TWO_PERSON_WALKTHROUGH_2026-07-15.md'), 'utf-8');
   const publicProof = fs.readFileSync(path.join(root, 'ion', 'two-person-proof.md'), 'utf-8');
   const ship = fs.readFileSync(path.join(root, 'ship.sh'), 'utf-8');

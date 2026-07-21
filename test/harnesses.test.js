@@ -6,6 +6,14 @@ test('core harnesses say what they are best for without owning model lists', () 
   assert.match(HARNESSES['claude-code'].bestFor, /repo edits/);
   assert.match(HARNESSES.codex.bestFor, /reviews/);
   assert.match(HARNESSES.gemini.bestFor, /broad/);
+  assert.match(HARNESSES.kimi.bestFor, /repo work/);
+});
+
+test('Kimi Code uses its documented non-interactive prompt and output flags', () => {
+  assert.deepEqual(
+    HARNESSES.kimi.args('review this change', 'kimi-code/kimi-for-coding'),
+    ['-p', 'review this change', '--output-format', 'text', '-m', 'kimi-code/kimi-for-coding']
+  );
 });
 
 test('Codex can run from directories that are not Git repositories', () => {
@@ -45,5 +53,6 @@ t2('resolveHarness accepts id, binary, and alias', () => {
   assert2.equal(resolveHarness('claude-code'), 'claude-code'); // canonical id
   assert2.equal(resolveHarness('cursor-agent'), 'cursor');    // binary → id
   assert2.equal(resolveHarness('codex'), 'codex');
+  assert2.equal(resolveHarness('kimi'), 'kimi');
   assert2.equal(resolveHarness('nope'), null);
 });

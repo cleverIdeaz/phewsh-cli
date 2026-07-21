@@ -25,25 +25,28 @@ test('canonical Project truth and the homepage teach one cross-harness product',
   assert.match(project.decisionGate.goal, /cross-harness continuity and collaboration layer/i);
   assert.match(plan, /Current Strategy \(Jul 15, 2026\)/);
   assert.match(plan, /Archived Strategy \(May 6, 2026 — superseded/);
-  assert.match(narrativeNext, /Active now \(Jul 16, 2026\)/);
+  assert.match(narrativeNext, /Active now \(Jul 19, 2026\)/);
   assert.match(narrativeNext, /Everything below is historical forward narrative/);
   assert.match(read('.intent/status.md'), /## Archive \(historical journal\)/);
 
-  // Hero (Jul 17): cross-provider continuity promise → five durable concepts →
-  // product map → handoff proof. Delivery detail (.intent/, Ion, connectors) moved
-  // below the hero, per the Jul 17 messaging pass.
+  // Hero: cross-provider continuity promise + owned mechanism → five durable
+  // concepts → product map → handoff proof. Ion and connector detail stay below.
   const hero = homepage.indexOf('Your project remembers, even when you switch tools.');
+  const heroIntent = homepage.indexOf('Project-owned <code');
   const fiveConcepts = homepage.indexOf('Stop being the copy-and-paste layer');
   const portableTruth = homepage.indexOf('folder you own');
   const productMap = homepage.indexOf('Start with intent. Connect your tools.');
   const boundedProof = homepage.indexOf('Carry forward what was recorded.');
   assert.ok(hero >= 0 && fiveConcepts > hero && productMap > fiveConcepts && boundedProof > productMap,
     'homepage should lead from the continuity promise to the five durable concepts to product map to handoff proof');
+  assert.ok(heroIntent > hero && heroIntent < fiveConcepts,
+    'the first viewport should name the project-owned .intent mechanism');
   assert.ok(portableTruth > hero,
     'the page should still name the portable project-owned .intent/ mechanism (now as delivery, below the hero)');
   assert.match(homepage, /One project\. Any AI\./);
-  assert.match(homepage, /Phewsh keeps your goals, decisions, current work, evidence, and handoffs in one portable project record/);
-  assert.match(homepage, /Provider-neutral &middot; User-owned &middot; Evidence-backed/);
+  assert.match(homepage, /For solo builders and teams using more than one AI/);
+  assert.match(homepage, /Phewsh keeps goals, decisions, current work, evidence, and handoffs in one portable record/);
+  assert.match(homepage, /No shared model memory &middot; Provider-neutral &middot; User-owned &middot; Evidence-backed/);
   for (const concept of ['Intent', 'Current work', 'Decisions', 'Evidence', 'Handoffs']) {
     assert.ok(homepage.includes('>' + concept + '</div>'), `five-concepts section names ${concept}`);
   }

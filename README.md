@@ -92,6 +92,12 @@ Rule of thumb: `phewsh serve` is the same-machine, project-bound worker used
 after a human claim. `phewsh mcp setup` lets a configured client read and report
 through bounded capabilities during its own session.
 
+`phewsh mcp proof prepare|verify` packages the falsifiable cross-provider
+continuity operator. It can bind ledger checks to a separately retained native
+capture, but it never treats caller-controlled transport labels or a file hash
+as authenticated provider identity; human review or later OAuth client binding
+remains required.
+
 ## Ambient — continuity without launching phewsh
 
 ```bash
@@ -205,6 +211,7 @@ phewsh push               # Sync local .intent/ to cloud
 phewsh pull               # Sync cloud to local
 phewsh mcp setup          # Configure the optional bounded MCP adapter
 phewsh mcp serve          # Serve bounded capabilities over stdio/HTTP
+phewsh mcp proof          # Prepare/verify a bounded cross-provider proof
 phewsh receipts           # Proof trail — what agents actually did, with evidence
 phewsh update             # Update phewsh to the latest version
 phewsh style              # Build your style identity

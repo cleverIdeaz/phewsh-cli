@@ -168,6 +168,15 @@ test('Intent app installs the canonical user-level skill without recreating proj
   assert.match(ship, /"intent\/skill\/"/);
 });
 
+test('the /intent/app export preserves the Intent source directory', () => {
+  const ship = read('ship.sh');
+
+  assert.doesNotMatch(ship, /for page in[^\n]*\bapp\b/);
+  assert.doesNotMatch(ship, /rm -rf ["']?\.\/app(?:["'\s]|$)/);
+  assert.match(ship, /rm -f \.\/app\.html \.\/app\/index\.html \.\/app\/__next\.\*\.txt/);
+  assert.match(ship, /cp app\/out\/app\.html \.\/app\/index\.html/);
+});
+
 test('live supporting pages treat MCP, sync, and local execution as bounded adapters', () => {
   const about = read('about.html');
   const connect = read('connect/index.html');
@@ -197,9 +206,11 @@ test('live supporting pages treat MCP, sync, and local execution as bounded adap
   assert.doesNotMatch(mcp, /executes\s+tasks instantly/i);
   assert.doesNotMatch(mcp, /Dispatch from anywhere/i);
 
-  assert.match(desktop, /Same-machine Ion worker/);
-  assert.match(desktop, /Work begins only after a human explicitly claims the task/);
-  assert.match(desktop, /Optional MCP adapter/);
+  assert.match(desktop, /CONCEPT PREVIEW/);
+  assert.match(desktop, /Nothing on this page executes work/);
+  assert.match(desktop, /concept until a signed build actually ships/);
+  assert.match(desktop, /Human review is required|human approval before anything runs/i);
+  assert.doesNotMatch(desktop, /download (for|on) (mac|windows|linux)/i);
 
   assert.match(phewsh, /One project truth across your AI tools and team/);
   assert.match(phewsh, /What was not recorded does not transfer/);
@@ -244,13 +255,14 @@ test('shared live entry surfaces use one bounded promise contract', () => {
   const cockpit = read('cockpit/index.html');
   const api = read('api/index.html');
   const connect = read('connect/index.html');
-  const ion = read('ion/index.html');
+  const ion = read('ion/classic.html');
+  const ionApp = read('ion/index.html');
   const founder = read('neal/index.html');
   const cliPage = read('cli/index.html');
   const session = read('cli/commands/session.js');
   const ui = read('cli/lib/ui.js');
   const ship = read('ship.sh');
-  const combined = [homepage, nav, platform, cockpit, api, connect, ion, founder, cliPage, session, ui].join('\n');
+  const combined = [homepage, nav, platform, cockpit, api, connect, ion, ionApp, founder, cliPage, session, ui].join('\n');
 
   assert.match(nav, /Install \+ review adapter setup/);
   assert.match(nav, /two separate consent screens/);
@@ -269,8 +281,16 @@ test('shared live entry surfaces use one bounded promise contract', () => {
   assert.match(platform, /Loopback is not authentication/);
   assert.match(api, /supported gateway models/);
   assert.match(api, /any\s+client using that key receives the gateway budget check/);
+  assert.match(api, /Phewsh MCP Connector Key/);
+  assert.match(api, /cannot call the paid model gateway/);
+  assert.match(api, /purpose: 'mcp'/);
+  assert.match(api, /purpose: 'gateway'/);
+  assert.match(api, /activeGatewayKeyId/);
+  assert.match(api, /activeMcpKeyId/);
   assert.match(connect, /Keep supported AI tools native/);
   assert.match(ion, /your team and supported AI tools one room/);
+  assert.match(ionApp, /Phewsh Ion/);
+  assert.match(ionApp, /The workspace above every AI workspace/);
   assert.match(homepage, /unrecorded conversation stays tool-local/);
   assert.match(founder, /same recorded truth,\s+with the handoff boundary visible/);
   assert.match(cliPage, /Their capabilities and transcripts remain separate/);

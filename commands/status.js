@@ -57,8 +57,86 @@ function safetyHooksApplied(file) {
     && hasHook(file, 'PostToolUse', 'phewsh hook post-tool');
 }
 
+// Structured view of the same four answers, for machine consumers (the
+// desktop shell reads this instead of scraping terminal output). Additive:
+// the human path below is untouched. Schema v1 — extend, don't mutate.
+function collect(cwd) {
+  const intentDir = path.join(cwd, '.intent');
+  const hasIntent = fs.existsSync(intentDir);
+  const key = path.basename(cwd);
+
+  let intentFiles = 0;
+  let hasVision = false;
+  if (hasIntent) {
+    try {
+      const files = fs.readdirSync(intentDir).filter(f => /\.(md|json)$/.test(f));
+      intentFiles = files.length;
+      hasVision = files.includes('vision.md');
+    } catch { /* unreadable dir stays 0/false */ }
+  }
+
+  const next = { counts: { now: 0, next: 0, done: 0 }, focus: null };
+  try {
+    const nx = require('../lib/next');
+    const items = nx.ordered(nx.load(cwd));
+    items.forEach(i => { next.counts[i.state]++; });
+    const focus = items.find(i => i.state === 'now') || items.find(i => i.state === 'next');
+    if (focus) next.focus = { title: focus.title, state: focus.state };
+  } catch { /* best-effort */ }
+
+  const work = { tools: 0, lastTs: null };
+  try {
+    const continuity = require('../lib/continuity');
+    const decisions = loadDecisions();
+    work.tools = continuity.toolsInThread(decisions, { project: key });
+    const line = continuity.lastLeftOff(decisions, { project: key });
+    if (line && line.ts) work.lastTs = line.ts;
+  } catch { /* best-effort */ }
+
+  const record = { decisions: 0, pending: 0, remembered: 0, driftCommits: null, handoff: null };
+  try {
+    const stats = require('../lib/outcomes').outcomeStats({ project: key });
+    record.decisions = stats.total || 0;
+    record.pending = stats.pending || 0;
+  } catch { /* none */ }
+  try { record.remembered = require('../lib/record').notes(cwd).length; } catch { /* none */ }
+  try { record.driftCommits = require('../lib/selfheal').commitsSinceIntent(cwd); } catch { /* unknown stays null */ }
+  try {
+    const handoff = require('../lib/handoff-receipt').latestHandoffReceipt({ cwd });
+    if (handoff) record.handoff = { id: handoff.id || null, status: handoff.status };
+  } catch { /* best-effort */ }
+
+  const ledger = loadLedger();
+  let ambientOn = false;
+  try { ambientOn = fs.readFileSync(path.join(os.homedir(), '.claude', 'settings.json'), 'utf-8').includes('phewsh hook session-start'); } catch { /* off */ }
+  let satisfiedSkills = 0;
+  try { satisfiedSkills = require('../lib/intent-skills').intentSkillStatus().satisfied.length; } catch { /* best-effort */ }
+  let shims = 0;
+  try { shims = require('../lib/shims').shimStatus().installed.length; } catch { /* none */ }
+  const adaptersOn = ambientOn
+    || Boolean(ledger.applied && ledger.applied.globalBase)
+    || satisfiedSkills > 0;
+
+  return {
+    schema: 1,
+    generatedAt: new Date().toISOString(),
+    version: require('../package.json').version,
+    project: { name: projectName(cwd), key, hasIntent, intentFiles, hasVision },
+    next,
+    work,
+    record,
+    delivery: { adaptersOn, shims },
+  };
+}
+
 function main() {
   const cwd = process.cwd();
+
+  if (process.argv.includes('--json')) {
+    console.log(JSON.stringify(collect(cwd), null, 2));
+    return;
+  }
+
   const intentDir = path.join(cwd, '.intent');
   const hasIntent = fs.existsSync(intentDir);
   const key = path.basename(cwd);

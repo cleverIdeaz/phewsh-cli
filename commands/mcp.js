@@ -9,10 +9,12 @@
 //   phewsh mcp status          — Check what agents can see right now
 //   phewsh mcp serve           — Start the HTTP transport for the web bridge (:7483)
 //   phewsh mcp serve --stdio   — Run the stdio MCP server (what agent configs point at)
+//   phewsh mcp proof           — Prepare or verify a bounded cross-provider proof
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { pathToFileURL } = require('url');
 const configFile = require('../lib/config-file');
 const { spawn } = require('child_process');
 
@@ -451,6 +453,18 @@ async function main() {
       }
       break;
     }
+    case 'proof': {
+      try {
+        const proofPath = path.join(__dirname, '..', 'lib', 'cross-provider-proof.mjs');
+        const { runCrossProviderProof } = await import(pathToFileURL(proofPath).href);
+        const code = await runCrossProviderProof(process.argv.slice(4));
+        if (code) process.exitCode = code;
+      } catch (err) {
+        console.error(`\n  ${yellow(`Cross-provider proof: ${err.message}`)}\n`);
+        process.exitCode = 1;
+      }
+      break;
+    }
     default:
       console.log(`\n  ${b('phewsh mcp')} — Connect AI agents to your project intelligence\n`);
       console.log(`  ${w('setup')}            Print manual Claude Code config + sync project cache`);
@@ -459,6 +473,7 @@ async function main() {
       console.log(`  ${w('serve')}            Run the HTTP bridge for the web app (:7483)`);
       console.log(`  ${w('serve --stdio')}    Run the stdio MCP server (for agent configs)`);
       console.log(`  ${w('token')}            Print a bearer token for the remote MCP server`);
+      console.log(`  ${w('proof')}            Prepare or verify a bounded cross-provider proof`);
       console.log('');
   }
 }

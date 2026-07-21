@@ -126,7 +126,7 @@ async function push(config, token) {
       user_id: userId,
       kind,
       content,
-    }, token);
+    }, token, { onConflict: ['project_id', 'kind'] });
     pushed.push(file);
   }
   if (localPPS) pushed.unshift('pps.json');
