@@ -119,6 +119,38 @@ async function executeJob(jobId) {
   }
 }
 
+// Some harnesses (Claude Code) stream NDJSON events (--output-format
+// stream-json). The web must see the model's actual answer and a readable live
+// phase — not the raw event log. Plain-text harnesses (codex/gemini/cursor)
+// fall through these helpers unchanged.
+function parseStreamEvent(line) {
+  const t = (line || '').trim();
+  if (!t.startsWith('{')) return null;
+  try { return JSON.parse(t); } catch { return null; }
+}
+
+function streamPhase(evt) {
+  if (!evt || typeof evt !== 'object' || !evt.type) return null;
+  if (evt.type === 'result') return 'Finishing…';
+  if (evt.type === 'assistant' || evt.type === 'stream_event') return 'Responding…';
+  if (evt.type === 'user') return 'Running a step…';
+  if (evt.type === 'system') return evt.subtype === 'status' ? 'Working…' : 'Starting…';
+  // Any other recognized stream event — a readable phase, never raw JSON.
+  return 'Working…';
+}
+
+// Returns { text, isError } from a stream-json transcript's final result event,
+// or null when the output is not stream-json (leave it as-is).
+function extractStreamResult(stdout) {
+  let final = null;
+  for (const line of String(stdout).split('\n')) {
+    const evt = parseStreamEvent(line);
+    if (evt && evt.type === 'result') final = evt;
+  }
+  if (!final) return null;
+  return { text: typeof final.result === 'string' ? final.result : '', isError: Boolean(final.is_error) };
+}
+
 async function executeViaHarness(job, packet, runner) {
   // Build a prompt from the dispatch packet
   const prompt = [
@@ -145,6 +177,8 @@ async function executeViaHarness(job, packet, runner) {
       env: { ...process.env },
       cwd: process.cwd(),
     });
+    // Keep a handle so an explicit human /cancel can stop this run.
+    job.child = child;
 
     // Some harnesses (codex exec, gemini) wait for stdin EOF before running.
     child.stdin.end();
@@ -154,11 +188,16 @@ async function executeViaHarness(job, packet, runner) {
 
     child.stdout.on('data', (data) => {
       stdout += data.toString();
-      // Update status with last line of output as progress indicator
-      const lines = stdout.trim().split('\n').filter(l => l.trim());
-      if (lines.length > 0) {
-        const lastLine = lines[lines.length - 1].trim().slice(0, 80);
-        job.statusText = lastLine || 'Working...';
+      // Live status: a readable phase for stream-json harnesses, else the last
+      // plain-text line. Never surface raw JSONL event noise to the web. Use the
+      // last COMPLETE line so a mid-stream chunk boundary can't leak a fragment.
+      const parts = stdout.split('\n');
+      const complete = parts.slice(0, stdout.endsWith('\n') ? parts.length : -1)
+        .map(l => l.trim()).filter(Boolean);
+      if (complete.length > 0) {
+        const lastLine = complete[complete.length - 1];
+        const phase = streamPhase(parseStreamEvent(lastLine));
+        job.statusText = phase || lastLine.slice(0, 80) || 'Working...';
       }
     });
 
@@ -167,9 +206,27 @@ async function executeViaHarness(job, packet, runner) {
     });
 
     child.on('close', (code) => {
-      if (code === 0 && stdout.trim()) {
+      // A human cancel already set the terminal state — record it and stop,
+      // never relabel a cancelled run as a failure.
+      if (job.status === 'cancelled') {
+        recordSessionEvent(job.runtimeId, 'web', 'task_cancelled', {
+          taskId: packet?.id || job.actionId || job.jobId,
+        });
+        console.log(`  ${yellow('■')} Job ${job.jobId.slice(0, 8)} cancelled by user`);
+        resolve();
+        return;
+      }
+      // For stream-json harnesses, surface the model's actual answer (and honor
+      // an in-band API error) instead of the raw event log.
+      const streamed = extractStreamResult(stdout);
+      if (streamed && streamed.isError) {
+        job.status = 'error';
+        job.error = streamed.text || `${runner.label} reported an error`;
+        job.statusText = 'Failed';
+        console.log(`  ${yellow('✗')} Job ${job.jobId.slice(0, 8)} failed: ${job.error.slice(0, 100)}`);
+      } else if (code === 0 && stdout.trim()) {
         job.status = 'done';
-        job.result = stdout.trim();
+        job.result = streamed ? (streamed.text || stdout.trim()) : stdout.trim();
         job.statusText = 'Complete';
         console.log(`  ${green('✓')} Job ${job.jobId.slice(0, 8)} completed`);
       } else {
@@ -348,6 +405,27 @@ function main() {
       }
     }
 
+    // Human-initiated cancel of a running job. Idempotent: an unknown or
+    // already-finished job answers ok without error, so a lost-response retry
+    // is safe. Only running jobs are stopped; terminal jobs are left as-is.
+    if (url.pathname === '/cancel' && req.method === 'POST') {
+      try {
+        const body = await parseBody(req);
+        const job = body && body.jobId ? jobs.get(body.jobId) : null;
+        if (!job) return json(req, res, { status: 'unknown' });
+        if (job.status === 'queued' || job.status === 'executing') {
+          job.status = 'cancelled';
+          job.statusText = 'Cancelled';
+          job.error = 'Run cancelled by user.';
+          if (job.child) { try { job.child.kill('SIGTERM'); } catch { /* already gone */ } }
+          console.log(`  ${yellow('■')} Cancel requested for job ${job.jobId.slice(0, 8)}`);
+        }
+        return json(req, res, { jobId: job.jobId, status: job.status });
+      } catch (err) {
+        return json(req, res, { error: err.message }, 400);
+      }
+    }
+
     // Mission control state — the same five rows bare `phewsh` shows, so
     // the web cockpit (phewsh.com/cockpit) mirrors the CLI to a T.
     if (url.pathname === '/cockpit' && req.method === 'GET') {
@@ -488,3 +566,4 @@ function main() {
 }
 
 module.exports = main;
+module.exports._internals = { parseStreamEvent, streamPhase, extractStreamResult };

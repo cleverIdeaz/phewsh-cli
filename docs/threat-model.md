@@ -22,6 +22,7 @@ to another tool.
 | Credentials | `~/.phewsh/config.json` | Authority to Phewsh cloud/provider features; never tool-native credentials |
 | Native tool session | Claude Code, Codex, Gemini, etc. | The tool acts with its own login and the user's OS permissions |
 | Ion/cloud state | Supabase-backed services | Shared registry/team data governed by service auth and row-level policy |
+| Private task inputs | Private Supabase Storage plus temporary `~/.phewsh/task-inputs/` cache | Exact bytes supplied to one task after manifest and SHA-256 verification |
 
 `.intent/` is portable evidence, not automatic truth. `phewsh truth` labels
 conflicts and unknowns; it cannot prove a product claim merely because that
@@ -49,7 +50,8 @@ claim appears in a file.
 | `phewsh serve` | IPv4/IPv6 loopback, browser-origin allowlist, project-bound claim rechecks | Loopback is not authentication; same-machine processes and non-browser clients remain in scope |
 | MCP HTTP transport | Loopback default | No transport authentication; `PHEWSH_MCP_HOST` must not expose it to an untrusted network |
 | Provider/BYOK call | User-selected route, direct provider/custom-endpoint request | The selected endpoint receives submitted prompts; its policy applies |
-| Cloud/Ion | Supabase auth, application checks, intended row-level policies | Local diagnostics cannot prove production RLS or realtime policy correctness |
+| Cloud/Ion | Supabase auth, application checks, intended row-level policies; custom CLI origins require paired environment variables, HTTPS outside loopback, and a matching JWT issuer | A selected custom origin receives its own session JWT; local diagnostics cannot prove production RLS or realtime policy correctness |
+| Private task input | Private bucket, immutable manifest, capture-aware claim, bounded byte/type/count checks, two-phase cloud deletion, automatic local-cache purge | A downloaded copy can outlive cloud deletion in another process, machine, backup, model provider, or storage medium |
 | npm/install script | Public source snapshot and inspectable package/installer | There is no release provenance or signed tag tying today's package to a commit |
 | Pack installation | Named source, confirmation, marked/reversible vendored blocks; linked packs stay pointers | Source content can still be malicious or later change; review before enabling |
 
@@ -82,6 +84,11 @@ machine, and stop it when not in use.
 - Browse/provider/cloud features transmit the data required by the destination
   the user selected. “Local-first” does not mean every optional action is
   offline.
+- Captured task inputs are untrusted data, not instructions. The claiming CLI
+  verifies their manifest, size, and SHA-256, materializes them with owner-only
+  permissions, and removes Phewsh's task cache after the claim command. The
+  offline `phewsh task clean-inputs <id>` command repairs interrupted cleanup;
+  neither it nor Ion can erase copies outside Phewsh's control.
 
 ## Supply-chain boundary
 

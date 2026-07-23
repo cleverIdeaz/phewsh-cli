@@ -57,6 +57,23 @@ test('buildTaskPrompt includes the objective and the isolation guardrails', () =
   assert.ok(/branch/i.test(p));
 });
 
+test('buildTaskPrompt names verified captures and treats them as untrusted data', () => {
+  const p = buildTaskPrompt(
+    { title: 'Use image', packet: { objective: 'Inspect the supplied image' } },
+    [{
+      name: 'screen.png',
+      mimeType: 'image/png',
+      sizeBytes: 123,
+      localPath: '/tmp/phewsh/screen.png',
+    }],
+  );
+  assert.match(p, /Captured inputs/);
+  assert.match(p, /\/tmp\/phewsh\/screen\.png/);
+  assert.match(p, /untrusted input data/i);
+  assert.match(p, /never execute/i);
+  assert.match(p, /human approves/i);
+});
+
 test('proposedOutcome is provisional and carries provenance', () => {
   const o = proposedOutcome({
     task: { id: 't1', title: 'Add validation', created_by: 'u-req', claimed_by: 'u-claim', packet: { verification: ['tests pass'] } },

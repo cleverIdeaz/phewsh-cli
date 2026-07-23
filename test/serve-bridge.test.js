@@ -189,6 +189,52 @@ test('/claim accepts only the repo linked by cloud id and live origin', async ()
   }
 });
 
+async function pollStatus(port, jobId, timeoutMs = 8000) {
+  const t0 = Date.now();
+  for (;;) {
+    const status = await getJson(port, `/status/${jobId}`);
+    if (['done', 'error', 'cancelled'].includes(status.status)) return status;
+    if (Date.now() - t0 > timeoutMs) throw new Error('job never reached a terminal state: ' + JSON.stringify(status));
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+test('/cancel of an unknown job is a safe, idempotent no-op (lost-response retry)', async () => {
+  const handle = startServe(PORT + 5);
+  try {
+    await waitForListen(handle);
+    const first = await postJson(PORT + 5, '/cancel', { jobId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' });
+    assert.strictEqual(first.status, 200);
+    assert.strictEqual(first.body.status, 'unknown');
+    // Retrying the same cancel must stay safe.
+    const second = await postJson(PORT + 5, '/cancel', { jobId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' });
+    assert.strictEqual(second.body.status, 'unknown');
+  } finally {
+    handle.child.kill('SIGKILL');
+  }
+});
+
+test('/cancel never relabels a job that already reached a terminal state', async () => {
+  const handle = startServe(PORT + 6);
+  try {
+    await waitForListen(handle);
+    // Dispatch to an uninstalled harness so the job fails fast — no real agent runs.
+    const dispatch = await postJson(PORT + 6, '/dispatch', {
+      actionId: 'cancel-test',
+      runtimeId: 'aider',
+      packet: { version: '1.0', id: 'cancel-test', objective: { task: 'noop' } },
+    });
+    assert.ok(dispatch.body.jobId, 'dispatch must return a jobId');
+    const terminal = await pollStatus(PORT + 6, dispatch.body.jobId);
+    assert.strictEqual(terminal.status, 'error', 'uninstalled harness must terminate as error');
+    // Cancelling a finished job must return its existing terminal status, not "cancelled".
+    const cancel = await postJson(PORT + 6, '/cancel', { jobId: dispatch.body.jobId });
+    assert.strictEqual(cancel.body.status, 'error');
+  } finally {
+    handle.child.kill('SIGKILL');
+  }
+});
+
 test('second worker on a taken port exits 1 with an honest message, no stack trace', async () => {
   const first = startServe(PORT + 1);
   try {

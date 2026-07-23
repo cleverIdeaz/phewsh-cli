@@ -140,6 +140,18 @@ isolated Git worktree, opens a PR through your authenticated `gh`, and returns
 bounded evidence to Ion; accepted work becomes project truth only through
 normal review, merge, and Record reconciliation.
 
+Private image, audio, text, and PDF inputs are verified against the task's
+immutable manifest before a capture-aware claim. Phewsh removes its local
+`~/.phewsh/task-inputs/<task-id>` cache when the claim command returns or
+fails. After an interrupted process, clean a unique local task prefix offline:
+
+```bash
+phewsh task clean-inputs <task-id>
+```
+
+Deleting inputs from Ion removes the Phewsh cloud objects and descriptors; it
+cannot recall copies another person, agent, backup, or process already made.
+
 ## Interactive Shell
 
 ```bash
@@ -285,6 +297,12 @@ All optional; phewsh needs no configuration to run. None of these hold secrets.
 | `PHEWSH_MCP_PORT` / `PHEWSH_MCP_HOST` | Bind address for the local MCP HTTP bridge |
 | `PHEWSH_ALLOWED_ORIGINS` | Extra CORS origins for the local serve bridge (loopback by default) |
 | `PHEWSH_PROJECT_INDEX` | Override the path of the local project index |
+| `PHEWSH_SUPABASE_URL` + `PHEWSH_SUPABASE_ANON_KEY` | Use a trusted self-hosted Supabase origin instead of Phewsh cloud; set both. HTTPS is required except on loopback |
+
+A custom Supabase origin receives the session JWT obtained by `phewsh login`.
+Use this override only for infrastructure you control and trust. Phewsh checks
+the JWT issuer before every authenticated request; switching origins requires a
+fresh login against the selected endpoint.
 
 ## Web app
 

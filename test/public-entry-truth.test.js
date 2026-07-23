@@ -206,7 +206,7 @@ test('live supporting pages treat MCP, sync, and local execution as bounded adap
   assert.doesNotMatch(mcp, /executes\s+tasks instantly/i);
   assert.doesNotMatch(mcp, /Dispatch from anywhere/i);
 
-  assert.match(desktop, /CONCEPT PREVIEW/);
+  assert.match(desktop, /DESIGN ARCHIVE/);
   assert.match(desktop, /Nothing on this page executes work/);
   assert.match(desktop, /concept until a signed build actually ships/);
   assert.match(desktop, /Human review is required|human approval before anything runs/i);

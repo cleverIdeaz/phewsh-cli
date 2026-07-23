@@ -3,6 +3,7 @@
 //   phewsh task                 List tasks for the linked cloud project
 //   phewsh task new <title>     Request a task teammates (or you) can claim
 //   phewsh task claim <id>      Manually claim + execute on an isolated branch + open a PR
+//   phewsh task clean-inputs    Remove Phewsh's local verified input cache
 //     --via <harness>           Route to a specific installed harness
 //
 // Boundaries (approved ruling): claiming is MANUAL — no daemon, no auto-claim.
@@ -17,6 +18,12 @@ const { execFileSync, spawnSync } = require('child_process');
 const configFile = require('../lib/config-file');
 const supa = require('../lib/supabase');
 const { normalizeRemote, taskBranch, taskLookupQuery, changedPathsFromPorcelain, buildTaskPrompt, proposedOutcome } = require('../lib/team-tasks');
+const {
+  materializeTaskCaptures,
+  parseTaskCaptureManifest,
+  purgeTaskCaptureDirectory,
+  taskCaptureClaimRequest,
+} = require('../lib/task-captures');
 const { HARNESSES, listHarnesses } = require('../lib/harnesses');
 const { recordResultFile } = require('../lib/receipts-data');
 
@@ -153,7 +160,7 @@ function syncMergedFromGitHub(config, rows) {
 async function listTasks(config) {
   const project = await loadProject(config);
   const rows = await supa.select('tasks',
-    `project_id=eq.${project.id}&select=id,title,status,claimed_by,assigned_to,suggested_harness,pull_request_url,created_at&order=created_at.desc&limit=20`,
+    `project_id=eq.${project.id}&select=id,title,packet,status,claimed_by,assigned_to,suggested_harness,pull_request_url,created_at&order=created_at.desc&limit=20`,
     config.supabaseAccessToken);
   await syncMergedFromGitHub(config, rows);
   const names = await memberNames(config, project.id);
@@ -169,6 +176,12 @@ async function listTasks(config) {
     if (t.claimed_by) bits.push(`claimed by ${nameOf(t.claimed_by)}`);
     else if (t.assigned_to) bits.push(`assigned to ${nameOf(t.assigned_to)}`);
     if (t.suggested_harness && !t.claimed_by) bits.push(`suggests ${HARNESSES[t.suggested_harness]?.label || t.suggested_harness}`);
+    try {
+      const captureCount = parseTaskCaptureManifest(t, project.id).length;
+      if (captureCount) bits.push(`${captureCount} private input${captureCount === 1 ? '' : 's'}`);
+    } catch {
+      bits.push('invalid private input manifest');
+    }
     console.log(`  ${color('●')} ${w(t.title)}  ${g(t.id.slice(0, 8))} ${color(t.status)}${bits.length ? g(' · ' + bits.join(' · ')) : ''}`);
     if (t.pull_request_url) console.log(`      ${cyan(t.pull_request_url)}`);
     if (t.status === 'merged') console.log(`      ${g('merged — record it:')} ${w(`phewsh task reconcile ${t.id.slice(0, 8)}`)}`);
@@ -263,9 +276,37 @@ async function claimTask(config, idArg, viaFlag) {
   const task = candidates[0];
   if (!task) throw new Error(`Task ${idArg} not found in this project.`);
 
-  const claimed = await supa.rpc('claim_task', { p_task_id: task.id }, config.supabaseAccessToken);
-  claimed.packet = claimed.packet || task.packet;
-  console.log(`\n  ${green('✓')} Claimed ${w(claimed.title)} ${g(claimed.id.slice(0, 8))}`);
+  // Fetch and verify private inputs before taking ownership. A broken or
+  // inaccessible capture must never strand a task in the claimed state.
+  const packetCaptures = parseTaskCaptureManifest(task, project.id);
+  const manifestRows = packetCaptures.length
+    ? await supa.select(
+        'project_captures',
+        `project_id=eq.${encodeURIComponent(project.id)}&task_id=eq.${encodeURIComponent(task.id)}&select=id,project_id,task_id,uploaded_by,kind,storage_path,original_name,mime_type,size_bytes,sha256`,
+        config.supabaseAccessToken,
+      )
+    : [];
+  const materialized = await materializeTaskCaptures({
+    task,
+    projectId: project.id,
+    accessToken: config.supabaseAccessToken,
+    download: supa.downloadStorageObject,
+    manifestRows,
+  });
+
+  let workError = null;
+  try {
+    const claimRequest = taskCaptureClaimRequest(task.id, packetCaptures);
+    const claimed = await supa.rpc(
+      claimRequest.functionName,
+      claimRequest.params,
+      config.supabaseAccessToken,
+    );
+    claimed.packet = claimed.packet || task.packet;
+    console.log(`\n  ${green('✓')} Claimed ${w(claimed.title)} ${g(claimed.id.slice(0, 8))}`);
+    if (materialized.captures.length) {
+      console.log(`  ${green('✓')} Verified ${materialized.captures.length} private input${materialized.captures.length === 1 ? '' : 's'} in ${w(materialized.directory)}`);
+    }
 
   // Isolated worktree on a deterministic branch (task id = idempotency key).
   const repoRoot = git(['rev-parse', '--show-toplevel'], process.cwd());
@@ -279,10 +320,20 @@ async function claimTask(config, idArg, viaFlag) {
 
   const host = os.hostname();
   const startedAt = new Date().toISOString();
-  await supa.rpc('start_execution', { p_task_id: claimed.id, p_metadata: { harness: harnessId, host } }, config.supabaseAccessToken);
+  await supa.rpc('start_execution', {
+    p_task_id: claimed.id,
+    p_metadata: {
+      harness: harnessId,
+      host,
+      capture_count: materialized.captures.length,
+    },
+  }, config.supabaseAccessToken);
 
   console.log(`  ${g('Running')} ${w(HARNESSES[harnessId].label)} ${g('— its output follows:')}\n`);
-  const run = spawnSync(HARNESSES[harnessId].bin, runnerArgs(harnessId, buildTaskPrompt(claimed)), {
+  const run = spawnSync(HARNESSES[harnessId].bin, runnerArgs(
+    harnessId,
+    buildTaskPrompt(claimed, materialized.captures),
+  ), {
     cwd: worktree, stdio: 'inherit', env: { ...process.env },
   });
   const finishedAt = new Date().toISOString();
@@ -330,9 +381,29 @@ async function claimTask(config, idArg, viaFlag) {
 
   await supa.rpc('open_pr', { p_task_id: claimed.id, p_branch: branch, p_pull_request_url: prUrl }, config.supabaseAccessToken);
 
-  console.log(`\n  ${green('✓')} PR open: ${cyan(prUrl)}`);
-  console.log(`  ${g('Teammates can review from the project room. Worktree kept at')} ${w(worktree)}`);
-  console.log(`  ${g('Clean up later:')} ${w(`git worktree remove ${worktree}`)}\n`);
+    console.log(`\n  ${green('✓')} PR open: ${cyan(prUrl)}`);
+    console.log(`  ${g('Teammates can review from the project room. Worktree kept at')} ${w(worktree)}`);
+    console.log(`  ${g('Clean up later:')} ${w(`git worktree remove ${worktree}`)}\n`);
+  } catch (cause) {
+    workError = cause;
+    throw cause;
+  } finally {
+    if (materialized.directory) {
+      try {
+        const cleaned = purgeTaskCaptureDirectory(task.id);
+        if (cleaned.removed) {
+          console.log(`  ${green('✓')} Removed Phewsh's local private-input cache for ${g(task.id.slice(0, 8))}`);
+        }
+      } catch (cleanupCause) {
+        const cleanupError = cleanupCause instanceof Error
+          ? cleanupCause
+          : new Error(String(cleanupCause));
+        console.error(`  ${red('!')} Local private-input cleanup failed: ${cleanupError.message}`);
+        console.error(`  ${g('Retry:')} ${w(`phewsh task clean-inputs ${task.id}`)}`);
+        if (!workError) throw cleanupError;
+      }
+    }
+  }
 }
 
 // `phewsh dispatch` is the friendly verb over the same machinery — no second
@@ -344,6 +415,16 @@ function dispatchToTaskArgs(args) {
   return ['new', ...args];
 }
 
+function cleanLocalTaskInputs(idArg) {
+  if (!idArg) throw new Error('Usage: phewsh task clean-inputs <task-id>');
+  const cleaned = purgeTaskCaptureDirectory(idArg);
+  if (!cleaned.removed) {
+    console.log(`\n  ${g('No Phewsh local private-input cache matched')} ${w(idArg)}\n`);
+    return;
+  }
+  console.log(`\n  ${green('✓')} Removed Phewsh's local private-input cache for ${w(cleaned.taskId)}\n`);
+}
+
 module.exports = async function run() {
   let args = process.argv.slice(3);
   if (process.argv[2] === 'dispatch') args = dispatchToTaskArgs(args);
@@ -353,6 +434,7 @@ module.exports = async function run() {
   const rest = args.filter((a, i) => i > 0 && i !== viaIdx && i !== viaIdx + 1);
 
   try {
+    if (sub === 'clean-inputs') return cleanLocalTaskInputs(rest[0]);
     const config = await getSession();
     if (sub === 'list') return await listTasks(config);
     if (sub === 'new') return await newTask(config, rest.join(' ').trim());
@@ -360,7 +442,7 @@ module.exports = async function run() {
     if (sub === 'invite') return await inviteTeammate(config, rest[0]);
     if (sub === 'join') return await joinProjects(config);
     if (sub === 'reconcile') return await reconcileTask(config, rest[0]);
-    console.log(`\n  Usage: phewsh task [list | new "<title>" | claim <id> [--via <harness>] | invite <email> | join]\n         phewsh dispatch ["<title>" | <id> | next] [--via <harness>]\n`);
+    console.log(`\n  Usage: phewsh task [list | new "<title>" | claim <id> [--via <harness>] | clean-inputs <id> | invite <email> | join]\n         phewsh dispatch ["<title>" | <id> | next] [--via <harness>]\n`);
   } catch (err) {
     console.error(`\n  ${red('✗')} ${err.message}\n`);
     process.exitCode = 1;
