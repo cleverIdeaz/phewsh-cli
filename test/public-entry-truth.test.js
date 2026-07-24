@@ -206,10 +206,13 @@ test('live supporting pages treat MCP, sync, and local execution as bounded adap
   assert.doesNotMatch(mcp, /executes\s+tasks instantly/i);
   assert.doesNotMatch(mcp, /Dispatch from anywhere/i);
 
-  assert.match(desktop, /DESIGN ARCHIVE/);
-  assert.match(desktop, /Nothing on this page executes work/);
-  assert.match(desktop, /concept until a signed build actually ships/);
-  assert.match(desktop, /Human review is required|human approval before anything runs/i);
+  // The desktop page was rewritten from a "design archive" mock to the live
+  // "Install Ion · Connect this device" surface. It must still frame local
+  // execution as bounded and honest — never a false download or blanket authority.
+  assert.match(desktop, /Install Ion/);
+  assert.match(desktop, /never grants blanket device authority/);
+  assert.match(desktop, /illustrative only, nothing there executes/);
+  assert.match(desktop, /bounded, human-initiated work|you stay in control/);
   assert.doesNotMatch(desktop, /download (for|on) (mac|windows|linux)/i);
 
   assert.match(phewsh, /One project truth across your AI tools and team/);
