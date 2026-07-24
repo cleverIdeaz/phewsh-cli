@@ -42,14 +42,29 @@ test('status --json emits valid JSON with the stable v1 schema', () => {
   assert.doesNotMatch(result.stdout, /\x1b\[/);
   const data = JSON.parse(result.stdout);
 
-  assert.equal(data.schema, 1);
+  assert.equal(data.schema, 2);
   assert.equal(typeof data.generatedAt, 'string');
   assert.equal(typeof data.version, 'string');
+
+  // Device (desktop-shell contract): os + versions + serve endpoint pointer.
+  assert.equal(typeof data.device.os, 'string');
+  assert.equal(typeof data.device.cliVersion, 'string');
+  assert.equal(data.device.serve.endpoint, 'http://127.0.0.1:7483');
 
   assert.equal(data.project.name, 'Status JSON Fixture');
   assert.equal(data.project.hasIntent, true);
   assert.equal(data.project.hasVision, true);
   assert.equal(typeof data.project.intentFiles, 'number');
+
+  // Checkout (read-only Git state). The temp fixture isn't a git repo → isRepo:false.
+  assert.equal(typeof data.checkout, 'object');
+  assert.equal(data.checkout.isRepo, false);
+
+  // Cloud link: the fixture has .intent/ but no cloud id.
+  assert.equal(data.cloudLink.linked, false);
+  assert.equal(data.cloudLink.intentPresent, true);
+  assert.equal(data.cloudLink.intentValid, true);
+  assert.equal(typeof data.cloudLink.registeredOnWorker, 'boolean');
 
   assert.equal(typeof data.next.counts.now, 'number');
   assert.equal(typeof data.next.counts.next, 'number');

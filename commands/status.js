@@ -117,11 +117,50 @@ function collect(cwd) {
     || Boolean(ledger.applied && ledger.applied.globalBase)
     || satisfiedSkills > 0;
 
+  // Device — the local host, for the desktop shell. Deterministic/offline: live
+  // serve + connected-agent state is read from the node's own `/health` contract
+  // (phewsh serve), never re-implemented here.
+  const device = {
+    os: process.platform,
+    cliVersion: require('../package.json').version,
+    serve: {
+      endpoint: 'http://127.0.0.1:7483',
+      healthPath: '/health',
+      note: 'Live serve + connected-agent state comes from the node /health contract, not duplicated here.',
+    },
+  };
+
+  // Checkout — read-only Git state (the CLI owns Git inspection).
+  let checkout = { isRepo: false };
+  try { checkout = require('../lib/git-status').inspectCheckout(cwd); } catch { /* best-effort */ }
+
+  // Cloud link — is this checkout bound to an Ion room, and is .intent/ valid?
+  let cloudId = null;
+  try { cloudId = require('../lib/ion-doctor').cloudProjectId(cwd); } catch { /* none */ }
+  let registeredOnWorker = false;
+  try {
+    const { serveProjects } = require('../lib/projects-index');
+    registeredOnWorker = serveProjects().some((registered) => {
+      try { return fs.realpathSync(registered.path) === fs.realpathSync(cwd); }
+      catch { return path.resolve(registered.path) === path.resolve(cwd); }
+    });
+  } catch { /* best-effort */ }
+  const cloudLink = {
+    cloudProjectId: cloudId,
+    linked: Boolean(cloudId),
+    intentPresent: hasIntent,
+    intentValid: hasVision,
+    registeredOnWorker,
+  };
+
   return {
-    schema: 1,
+    schema: 2,
     generatedAt: new Date().toISOString(),
     version: require('../package.json').version,
+    device,
     project: { name: projectName(cwd), key, hasIntent, intentFiles, hasVision },
+    checkout,
+    cloudLink,
     next,
     work,
     record,
