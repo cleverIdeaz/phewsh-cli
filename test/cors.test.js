@@ -17,6 +17,14 @@ test('allows the documented local development origin', () => {
   assert.equal(isAllowedRequest(req), true);
 });
 
+test('allows the Phewsh Desktop (Tauri) webview origin and reflects it', () => {
+  const req = request({ origin: 'tauri://localhost' });
+  assert.equal(isAllowedRequest(req), true);
+  assert.equal(corsHeaders(req)['Access-Control-Allow-Origin'], 'tauri://localhost');
+  const win = request({ origin: 'http://tauri.localhost' });
+  assert.equal(isAllowedRequest(win), true);
+});
+
 test('rejects an untrusted browser origin', () => {
   const req = request({ origin: 'https://example.com' });
   assert.equal(isAllowedRequest(req), false);
