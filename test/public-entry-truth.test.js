@@ -206,14 +206,38 @@ test('live supporting pages treat MCP, sync, and local execution as bounded adap
   assert.doesNotMatch(mcp, /executes\s+tasks instantly/i);
   assert.doesNotMatch(mcp, /Dispatch from anywhere/i);
 
-  // The desktop page was rewritten from a "design archive" mock to the live
-  // "Install Ion · Connect this device" surface. It must still frame local
-  // execution as bounded and honest — never a false download or blanket authority.
+  // The desktop page now offers a REAL download, so the old guard (no
+  // download language at all, because no download existed) is retired. What
+  // replaces it is stricter: if the page offers a binary, it must disclose
+  // that the binary is unsigned and must not overstate what the app can do.
   assert.match(desktop, /Install Ion/);
   assert.match(desktop, /never grants blanket device authority/);
   assert.match(desktop, /illustrative only, nothing there executes/);
   assert.match(desktop, /bounded, human-initiated work|you stay in control/);
-  assert.doesNotMatch(desktop, /download (for|on) (mac|windows|linux)/i);
+
+  // Downloads point at the public release repo — never at a path in this
+  // private repo, which no visitor could fetch.
+  assert.match(desktop, /cleverIdeaz\/phewsh-desktop\/releases/);
+
+  // The unsigned-alpha disclosure is load-bearing: it is the reason a user
+  // sees an OS malware warning, and it must not quietly disappear.
+  assert.match(desktop, /not code-signed/i);
+  assert.match(desktop, /System Settings → Privacy &amp; Security/);
+  assert.match(desktop, /Run anyway/);
+  // Unverified must never be dressed up as "checked and safe".
+  assert.match(desktop, /not .this file was checked and found harmful/i);
+
+  // Updates are the one thing that IS signed; the page may claim verification
+  // only alongside the refusal behaviour that makes the claim meaningful.
+  assert.match(desktop, /signed with Phewsh's release key is refused/);
+
+  // The unfinished link step must stay admitted while it is unfinished.
+  assert.match(desktop, /does not yet create the link/);
+  // The CLI is a hard prerequisite for serve; the page must not imply the
+  // desktop app is self-sufficient.
+  assert.match(desktop, /npm install -g phewsh/);
+  // Loopback-only dispatch is a security boundary, not a missing feature.
+  assert.match(desktop, /teammate still cannot command an agent on your machine/);
 
   assert.match(phewsh, /One project truth across your AI tools and team/);
   assert.match(phewsh, /What was not recorded does not transfer/);
