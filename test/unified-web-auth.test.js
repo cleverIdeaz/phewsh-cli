@@ -38,7 +38,8 @@ test('global nav owns every web sign-in method and uses one fixed callback', () 
 });
 
 test('shared navigation exposes the canonical Workspace without disguising the account dashboard', () => {
-  assert.match(nav, /href="\/intent\/app" class="pn-nav-link">Workspace<\/a>/);
+  // The top bar is trimmed to CLI · Intent · Ion; Workspace stays reachable in the menu.
+  assert.doesNotMatch(nav, /class="pn-nav-link">Workspace<\/a>/);
   assert.match(nav, /mi\('\/intent\/app', 'Workspace'/);
   assert.match(nav, /mi\('\/intent\/dashboard', 'Account'/);
   assert.match(nav, /activeIntentRoute = \['\/intent\/app', '\/intent\/dashboard'\]/);
