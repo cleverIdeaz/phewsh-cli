@@ -7,6 +7,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { select, upsert, refreshSession } = require('../lib/supabase');
 const { readPPS, writePPS } = require('../lib/pps');
+const { resolveProjectBinding } = require('../lib/project-binding');
 const configFile = require('../lib/config-file');
 
 const CONFIG_PATH = path.join(os.homedir(), '.phewsh', 'config.json');
@@ -60,30 +61,36 @@ async function push(config, token) {
   const projectName = getProjectName();
   const userId = config.supabaseUserId;
 
-  // Find or create the project
-  let project;
-  const existing = await select(
-    'projects',
-    `name=eq.${encodeURIComponent(projectName)}&user_id=eq.${userId}&select=id,name`,
-    token
-  );
-
   // Read pps.json if it exists
   const localPPS = readPPS(INTENT_DIR);
   const archetype = localPPS?.archetype || 'product';
-  const projectId = localPPS?.adapters?.phewsh?.cloud_id || null;
+  const linkedId = localPPS?.adapters?.phewsh?.cloud_id || null;
 
-  if (existing.length > 0) {
-    project = existing[0];
-  } else if (projectId) {
-    // Linked to a specific cloud project — fetch it
-    const linked = await select('projects', `id=eq.${projectId}&user_id=eq.${userId}&select=id,name`, token).catch(() => []);
-    project = linked[0] || null;
+  // Find the project the link points at, and only fall back to a name search
+  // when there is no link at all — see lib/project-binding.js for why the
+  // order matters.
+  const byId = linkedId
+    ? (await select('projects', `id=eq.${linkedId}&user_id=eq.${userId}&select=id,name`, token).catch(() => []))[0] || null
+    : null;
+  const byName = linkedId
+    ? []
+    : await select('projects', `name=eq.${encodeURIComponent(projectName)}&user_id=eq.${userId}&select=id,name`, token);
+
+  const binding = resolveProjectBinding({ linkedId, byId, byName });
+  if (binding.action === 'ambiguous') {
+    console.log(`\n  ${binding.matches.length} cloud projects are named "${projectName}" — Phewsh will not guess which one this repo belongs to.\n`);
+    binding.matches.forEach(m => console.log(`    ${m.id}`));
+    console.log('\n  Pick one:  phewsh link <cloud-project-id>\n');
+    process.exit(1);
   }
 
+  let project = binding.action === 'use' ? binding.project : null;
+
   if (!project) {
+    // `absent` keeps the linked id so the bond survives a deleted cloud
+    // project; `none` mints a fresh one.
     const payload = {
-      id: (localPPS?.adapters?.phewsh?.cloud_id) || genProjectId(),
+      id: binding.action === 'absent' ? binding.id : genProjectId(),
       user_id: userId,
       name: projectName,
       archetype,
@@ -92,7 +99,9 @@ async function push(config, token) {
     if (localPPS) payload.pps_json = localPPS;
     const created = await upsert('projects', payload, token);
     project = Array.isArray(created) ? created[0] : created;
-    console.log(`  Created project: ${projectName}`);
+    console.log(binding.action === 'absent'
+      ? `  Restored project: ${projectName} (${payload.id} was linked but missing in the cloud)`
+      : `  Created project: ${projectName}`);
   } else if (localPPS) {
     // Update pps_json on existing project
     await upsert('projects', {
@@ -178,18 +187,39 @@ async function pull(config, token, cloudId = null) {
   const projectName = getProjectName();
   const userId = config.supabaseUserId;
 
-  let query = cloudId
-    ? `id=eq.${cloudId}&user_id=eq.${userId}&select=id,name,pps_json`
-    : `name=eq.${encodeURIComponent(projectName)}&user_id=eq.${userId}&select=id,name,pps_json`;
+  // Pull overwrites .intent/, so binding to the wrong project destroys the
+  // local source of truth. An explicit id or link therefore always wins over a
+  // name match, and two same-named projects stop rather than guess.
+  const linkedId = readPPS(INTENT_DIR)?.adapters?.phewsh?.cloud_id || null;
+  const wantedId = cloudId || linkedId;
 
-  const projects = await select('projects', query, token);
+  const byId = wantedId
+    ? (await select('projects', `id=eq.${wantedId}&user_id=eq.${userId}&select=id,name,pps_json`, token).catch(() => []))[0] || null
+    : null;
+  const byName = wantedId
+    ? []
+    : await select('projects', `name=eq.${encodeURIComponent(projectName)}&user_id=eq.${userId}&select=id,name,pps_json`, token);
 
-  if (projects.length === 0) {
+  const binding = resolveProjectBinding({ requestedId: cloudId, linkedId, byId, byName });
+
+  if (binding.action === 'ambiguous') {
+    console.log(`\n  ${binding.matches.length} cloud projects are named "${projectName}" — Phewsh will not guess which one to pull into .intent/.\n`);
+    binding.matches.forEach(m => console.log(`    ${m.id}`));
+    console.log('\n  Pick one:  phewsh link <cloud-project-id>\n');
+    return;
+  }
+  if (binding.action === 'absent') {
+    console.log(binding.source === 'requested'
+      ? `\n  No cloud project found with id: ${binding.id}\n`
+      : `\n  This repo is linked to cloud project ${binding.id}, which no longer exists (or is not yours).\n  Re-link with \`phewsh link <cloud-project-id>\`, or \`phewsh push\` to restore it from .intent/.\n`);
+    return;
+  }
+  if (binding.action === 'none') {
     console.log(`\n  No cloud project found for "${projectName}".\n  Push first with: phewsh push\n`);
     return;
   }
 
-  const project = projects[0];
+  const project = binding.project;
   fs.mkdirSync(INTENT_DIR, { recursive: true });
 
   const pulled = [];
@@ -287,6 +317,12 @@ async function status(config, token) {
   const projects = await select('projects', query, token);
   if (projects.length === 0) {
     console.log(`\n  ↕ "${projectName}" isn't in the cloud yet — run \`phewsh push\` to sync.\n`);
+    return;
+  }
+  if (!cloudId && projects.length > 1) {
+    // Reporting drift against an arbitrary same-named project would tell you
+    // to push or pull toward the wrong one.
+    console.log(`\n  ↕ ${projects.length} cloud projects are named "${projectName}" — link this repo to one to see drift:\n       phewsh link <cloud-project-id>\n`);
     return;
   }
   const project = projects[0];

@@ -344,3 +344,50 @@ test('repository front door local links resolve', () => {
     assert.ok(fs.existsSync(path.resolve(ROOT, target)), `missing README link target: ${target}`);
   }
 });
+
+// The download page hardcodes asset filenames, but `make-release.mjs` is what
+// actually decides them. Nothing connects the two at runtime: rename an asset in
+// the script (or fix a typo on the page) and every download silently 404s, which
+// is exactly the failure a visitor cannot diagnose and will not report. This ties
+// them together so the break happens in CI instead of on the live site.
+test('every /desktop download URL matches an asset the release script really produces', () => {
+  const desktop = read('desktop/index.html');
+  const script = read('desktop/spike-tauri/scripts/make-release.mjs');
+
+  // Canonical names the script assigns, e.g.  as: "Phewsh-Ion-macOS.dmg",
+  const canonical = new Set([...script.matchAll(/\bas:\s*"([^"]+)"/g)].map((m) => m[1]));
+
+  assert.ok(
+    canonical.size >= 5,
+    `expected make-release.mjs to define at least 5 canonical asset names, parsed ${canonical.size}. ` +
+      `If the script's shape changed, update this parser — do not weaken the check.`
+  );
+
+  // Every release-download link the page offers must name one of those assets.
+  const linked = [...desktop.matchAll(/releases\/latest\/download\/([^"'\s>]+)/g)].map((m) => m[1]);
+  assert.ok(linked.length > 0, 'the desktop page offers no download links at all');
+
+  for (const asset of linked) {
+    assert.ok(
+      canonical.has(asset),
+      `desktop/index.html links "${asset}", which make-release.mjs never produces. ` +
+        `Known assets: ${[...canonical].join(', ')}`
+    );
+  }
+
+  // The updater manifest must be reachable at the stable URL the app polls;
+  // tag-pinned asset URLs inside it are fine, but this entry point cannot move.
+  assert.match(
+    read('desktop/spike-tauri/src-tauri/tauri.conf.json'),
+    /releases\/latest\/download\/latest\.json/,
+    'the updater endpoint must use the /latest/ URL so installed apps keep finding it'
+  );
+
+  // Platform detection may only offer a binary that is actually built.
+  for (const os of ['macOS', 'Windows', 'Linux']) {
+    assert.ok(
+      linked.some((a) => a.includes(os)),
+      `the page offers no ${os} download, but the release pipeline builds one`
+    );
+  }
+});
