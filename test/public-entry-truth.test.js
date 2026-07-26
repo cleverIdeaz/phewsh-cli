@@ -1,10 +1,18 @@
-const test = require('node:test');
+const baseTest = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..', '..');
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
+
+// These assertions read the monorepo's website sources, which are NOT part of
+// the public cli/ mirror (ship.sh rsyncs only cli/). Outside the monorepo they
+// skip rather than fail on a missing path — a test that cannot pass where it is
+// published is noise, not a guard.
+const MONOREPO = fs.existsSync(path.join(ROOT, 'ship.sh'));
+const test = MONOREPO ? baseTest : baseTest.skip;
+
 
 test('repository front door explains one truth, native adapters, and three doors', () => {
   const readme = read('README.md');
@@ -390,4 +398,73 @@ test('every /desktop download URL matches an asset the release script really pro
       `the page offers no ${os} download, but the release pipeline builds one`
     );
   }
+});
+
+// ── phewsh x: a charter, not a launch ──────────────────────────────────────
+// The page's whole claim to credibility is that it says the guild does not
+// exist. The pressure to quietly upgrade "proposed" into "join now" will
+// arrive long before the guild does, so the disclosures are pinned here.
+test('the phewsh x page states the guild does not exist and cannot imply it does', () => {
+  const x = read('x/index.html');
+
+  // The disclosure, and its position: it must be in the hero, not the footer.
+  assert.match(x, /Nothing is being shared yet/);
+  assert.ok(
+    x.indexOf('Nothing is being shared yet') < x.indexOf('The charter'),
+    'the disclosure must appear before the charter, not after it'
+  );
+  assert.match(x, /No compute is pooled, no\s+machine has joined/);
+  assert.match(x, /currently forbids running work across machines/);
+
+  // The honest status of every piece, including the parts that look bad.
+  assert.match(x, /Currently forbidden/);
+  assert.match(x, /Not started/);
+
+  // The six terms are the product. Losing one silently is the failure mode.
+  for (const term of [
+    /Off unless chosen/,
+    /You set the ceiling/,
+    /Every cycle is attributable/,
+    /Leaving is instant/,
+    /Compute is shared\. Your project is not/,
+    /What you give sets what you can draw/,
+  ]) {
+    assert.match(x, term, `charter term missing: ${term}`);
+  }
+
+  // The three gates must stay named, because they are what gate the build.
+  assert.match(x, /requires a separate ruling/);
+  assert.match(x, /isolation, not\s*a\s*security boundary/);
+  assert.match(x, /One meaning for SAP/);
+
+  // Signing must never read as joining.
+  assert.match(x, /Signing binds nobody and joins nothing/);
+  assert.doesNotMatch(x, /\bJoin the (guild|network)\b/i);
+  // The page says "Not a waitlist" — so forbid the *offer*, not the word.
+  assert.match(x, /Not a waitlist/);
+  assert.doesNotMatch(x, /join the waitlist|sign up now|get early access/i);
+});
+
+// ── /build: Neal's own condition on selling the service ────────────────────
+test('the MCP service page keeps "you could do this yourself" near the top', () => {
+  const b = read('build/index.html');
+
+  assert.match(b, /You could do this yourself/);
+  assert.match(b, /modelcontextprotocol\.io/);
+  // Burying it turns candour into a tactic: it must precede the pitch.
+  assert.ok(
+    b.indexOf('You could do this yourself') < b.indexOf('What you get'),
+    'the self-serve disclosure must come before the sales content'
+  );
+  assert.match(b, /not false modesty/);
+
+  // No invented price, and no placeholder that could ship by accident.
+  assert.match(b, /Pay what it is worth to you/);
+  assert.doesNotMatch(b, /\$\s?\d/, 'no dollar figure — Neal sets pricing, not the page');
+  assert.doesNotMatch(b, /TBD|TODO|XXX|placeholder/i);
+
+  // Handover, not lock-in — the page promises the buyer owns the result.
+  assert.match(b, /no dependency\s+on Phewsh/);
+  assert.match(b, /never sit between you and your bill/);
+  assert.match(b, /may end with me telling you that\s+you do not need this/);
 });
