@@ -1,0 +1,76 @@
+{
+  "schema": "phewsh.run-receipt",
+  "version": 1,
+  "receiptId": "r-9b0a22a15a3b43cb",
+  "jobId": "9b0a22a1-5a3b-43cb-be5f-1bd7710c80f1",
+  "projectId": "phewsh",
+  "boundProjectId": "8a849716ebfaf431",
+  "runtimeId": "claude-code",
+  "runtimeLabel": "Claude Code",
+  "startedAt": "2026-07-29T02:19:11.929Z",
+  "endedAt": "2026-07-29T02:19:13.001Z",
+  "durationMs": 1072,
+  "status": "done",
+  "boundByCaller": true,
+  "cancelled": false,
+  "partial": false,
+  "contract": {
+    "action": "report the working directory",
+    "actor": "Claude Code",
+    "where": "phewsh — the copy on this device (github.com/cleverideaz/phewsh)",
+    "reads": "Files in this project, including its .intent/.",
+    "writes": "May create or change files in this project. Nothing outside it.",
+    "cost": "Unknown — the engine reports which account authorizes a tool, never a price.",
+    "authority": "Runs on this machine, in this project only. No cloud, no other repository, no other device.",
+    "verificationCeiling": "Not verified. A receipt records what happened and points at evidence; it does not check the work.",
+    "undo": "File changes are yours to revert with git. Nothing reaches Record or Next unless you accept it."
+  },
+  "changes": {
+    "observed": true,
+    "preExisting": [
+      "already-dirty.txt"
+    ],
+    "created": [
+      "run-artifact.txt"
+    ],
+    "modified": [
+      "src/a.js"
+    ],
+    "deleted": []
+  },
+  "checks": {
+    "run": false,
+    "reason": "Checks did not run. The engine dispatched a tool; it did not test the result."
+  },
+  "cost": {
+    "known": false,
+    "reason": "Unknown — the engine observes which account authorizes a tool, never a price.",
+    "account": null
+  },
+  "output": {
+    "bytes": 24,
+    "sha256": "3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f"
+  },
+  "evidence": {
+    "receiptFile": "receipts/r-9b0a22a15a3b43cb.json",
+    "sessionEvents": "sessions/phewsh_sessions.json",
+    "note": "Inspect the changed paths with git in the project itself."
+  },
+  "verificationCeiling": "Not verified. This records that a run happened and what changed; it does not check the work.",
+  "unknowns": [
+    "Whether the work is correct. No check ran here.",
+    "What the tool did internally — only its changed paths and output size were observed."
+  ],
+  "carried": [
+    "The changed paths, the route that ran, and when.",
+    "The authority contract as it was reviewed.",
+    "The receipt id, so this run can be found again."
+  ],
+  "notCarried": [
+    "The transcript and the model’s reasoning.",
+    "File contents and any secret in the environment.",
+    "Any judgement about whether the work is correct.",
+    "Protection from being altered. This is an ordinary file on your disk; Phewsh never rewrites it and checks its hash on read, but a program running as you could edit it."
+  ],
+  "writeOnce": true
+}

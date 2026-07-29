@@ -114,3 +114,74 @@ test('writing the projection from a nested dir targets the project-root CLAUDE.m
   assert.ok(coreOf(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf-8')).length > 0, 'root projection written');
   assert.ok(!fs.existsSync(path.join(nested, 'CLAUDE.md')), 'no nested CLAUDE.md created');
 });
+
+// The Record is the fourth word. `phewsh remember` writes .intent/decisions.md,
+// and until 2026-07-28 the canonical projection's source allowlist omitted it —
+// so every native projection taught Project and Next but dropped what the last
+// session learned. Found by the P2 released-artifact cold-transfer run.
+test('the canonical projection carries the Record, not just Project and Next', () => {
+  const root = project();
+  fs.writeFileSync(
+    path.join(root, '.intent', 'decisions.md'),
+    '# Decisions\n\n- 2026-07-28 — Chose loopback-only dispatch because a remote node cannot prove machine identity.\n',
+  );
+  fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# root\n');
+  selfheal.syncContextFiles({ cwd: root, targets: ['CLAUDE.md'] });
+  const core = coreOf(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf-8'));
+  assert.match(core, /## Record/, 'canonical projection has no Record section');
+  assert.match(core, /loopback-only dispatch/, 'canonical projection dropped the recorded decision');
+  assert.match(core, /\.intent\/decisions\.md/, 'Record section does not point at its source of truth');
+});
+
+test('the canonical projection keeps the Record bounded and newest-first', () => {
+  const root = project();
+  const entries = Array.from({ length: 12 }, (_, i) =>
+    `- 2026-07-${String(i + 1).padStart(2, '0')} — Decision number ${i + 1}.`).join('\n');
+  fs.writeFileSync(path.join(root, '.intent', 'decisions.md'), `# Decisions\n\n${entries}\n`);
+  fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# root\n');
+  selfheal.syncContextFiles({ cwd: root, targets: ['CLAUDE.md'] });
+  const core = coreOf(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf-8'));
+  assert.match(core, /Decision number 12\./, 'newest decision missing');
+  assert.doesNotMatch(core, /Decision number 1\./, 'unbounded — carried the whole journal');
+  assert.match(core, /3 most recent of 12 decisions/, 'did not disclose that the record was truncated');
+  // Newest first: 12 must appear before 10 (both are inside the cap).
+  assert.ok(core.includes('Decision number 10.'), 'expected the third-newest entry to be carried');
+  assert.ok(core.indexOf('Decision number 12.') < core.indexOf('Decision number 10.'), 'not newest-first');
+});
+
+// The regression this caused on first implementation: two real phewsh decision
+// entries (each ~2,000 chars) consumed the pre-emission budget and evicted the
+// entire Active Actions block — Now plus 26 accepted success criteria — from
+// every projection. The Record is a headline pointing at the file; it must never
+// outrank the accepted Next criteria.
+test('a long Record never evicts the accepted Next criteria', () => {
+  const root = project();
+  const fat = Array.from({ length: 6 }, (_, i) =>
+    `- 2026-07-${String(i + 10).padStart(2, '0')} — Decision ${i + 1}. ${'context '.repeat(300)}`).join('\n');
+  fs.writeFileSync(path.join(root, '.intent', 'decisions.md'), `# Decisions\n\n${fat}\n`);
+  fs.writeFileSync(path.join(root, '.intent', 'next.json'), JSON.stringify({
+    items: [{
+      id: 'n1', title: 'Ship the golden journey', state: 'now',
+      criteria: Array.from({ length: 20 }, (_, i) => ({ expected: `Criterion number ${i + 1} must hold`, type: 'measurable' })),
+    }],
+  }));
+  fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# root\n');
+  selfheal.syncContextFiles({ cwd: root, targets: ['CLAUDE.md'] });
+  const core = coreOf(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf-8'));
+  assert.match(core, /## Record/, 'Record missing');
+  assert.match(core, /Criterion number 1 must hold/, 'accepted Next criteria were evicted by the Record');
+  assert.match(core, /Ship the golden journey/, 'the current Next item was evicted by the Record');
+});
+
+test('each Record entry is truncated to a headline, not the full journal entry', () => {
+  const root = project();
+  const long = `- 2026-07-28 — Headline part. ${'tail '.repeat(400)}`;
+  fs.writeFileSync(path.join(root, '.intent', 'decisions.md'), `# Decisions\n\n${long}\n`);
+  fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# root\n');
+  selfheal.syncContextFiles({ cwd: root, targets: ['CLAUDE.md'] });
+  const core = coreOf(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf-8'));
+  const line = core.split('\n').find(l => l.includes('Headline part.'));
+  assert.ok(line, 'the decision headline is missing');
+  assert.ok(line.length < 300, `Record entry not truncated (${line.length} chars)`);
+  assert.match(line, /…$/, 'truncated entry does not disclose truncation');
+});

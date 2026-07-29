@@ -15,8 +15,9 @@
 //   phewsh receipts --project local    Filter to one project
 //   phewsh receipts --limit 50         More history
 //   phewsh receipts --json             Machine-readable (for web/agents)
+//   phewsh receipts <receipt-id>       One run receipt in full
 
-const { gatherReceipts } = require('../lib/receipts-data');
+const { gatherReceipts, readRunReceipt } = require('../lib/receipts-data');
 
 // House palette (matches bin/phewsh.js / feedback: bright enough for dark terminals)
 const b = (s) => `\x1b[1m${s}\x1b[0m`;
@@ -84,6 +85,45 @@ function renderEvent(e) {
   return `  ${d(time)}  ${icon} ${line}${who}${proj}`;
 }
 
+/** One run receipt, rendered exactly as stored — no extra claims. */
+function printRunReceipt(r) {
+  const line = (label, value) => console.log(`  ${g(label.padEnd(14))} ${value}`);
+  const changed = [
+    ...r.changes.created.map((p) => green(`+${p}`)),
+    ...r.changes.modified.map((p) => yellow(`~${p}`)),
+    ...r.changes.deleted.map((p) => red(`-${p}`)),
+  ];
+  console.log('');
+  console.log(`  ${b(w('Receipt'))} ${w(r.receiptId)} ${g(`(${r.schema} v${r.version})`)}`);
+  console.log('');
+  line('Ran', `${w(r.runtimeLabel)} ${g('in')} ${w(r.projectId)} ${g(r.boundProjectId || '')}`);
+  line('Status', r.status === 'done' ? green(r.status) : yellow(r.status) + (r.partial ? red(' · partial') : ''));
+  line('When', `${g(r.startedAt)} ${g(`(${r.durationMs ?? '?'}ms)`)}`);
+  if (r.contract?.action) line('Action', r.contract.action);
+  line('Changed', changed.length ? changed.join(g(', ')) : g('nothing'));
+  if (r.changes.preExisting.length) {
+    line('Already dirty', g(`${r.changes.preExisting.length} path(s) — not this run's work`));
+  }
+  line('Checks', yellow(r.checks.reason));
+  line('Cost', g(r.cost.reason));
+  line('Output', g(`${r.output.bytes} bytes${r.output.sha256 ? ` · sha256 ${r.output.sha256.slice(0, 12)}…` : ''}`));
+  line('Ceiling', yellow(r.verificationCeiling));
+  line('Integrity', r.integrity === 'intact'
+    ? green('intact — matches the hash recorded when it was written')
+    : r.integrity === 'altered'
+      ? red('ALTERED since Phewsh wrote it — do not treat this as evidence')
+      : g('no hash was recorded for this receipt'));
+  console.log('');
+  console.log(`  ${g('Unknown:')}`);
+  for (const u of r.unknowns) console.log(`    ${g('·')} ${g(u)}`);
+  console.log(`  ${g('Not carried:')}`);
+  for (const n of r.notCarried) console.log(`    ${g('·')} ${g(n)}`);
+  console.log('');
+  console.log(`  ${g('Evidence:')} ${w(`~/.phewsh/${r.evidence.receiptFile}`)}`);
+  console.log(`  ${g('This is evidence, not accepted project truth. Accept it in Ion to reach the Record.')}`);
+  console.log('');
+}
+
 async function main() {
   const args = process.argv.slice(3);
   const json = args.includes('--json');
@@ -91,6 +131,21 @@ async function main() {
   const projectFilter = projIdx >= 0 ? args[projIdx + 1] : null;
   const limitIdx = args.indexOf('--limit');
   const limit = limitIdx >= 0 ? parseInt(args[limitIdx + 1], 10) || 20 : 20;
+
+  // One full run receipt. Same file Ion renders, so the two surfaces cannot
+  // tell different stories about the same run.
+  const receiptId = args.find((a) => /^r-[a-f0-9]+$/i.test(a));
+  if (receiptId) {
+    const receipt = readRunReceipt(receiptId);
+    if (!receipt) {
+      console.log(`\n  ${g('No receipt')} ${w(receiptId)} ${g('on this machine.')}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    if (json) { console.log(JSON.stringify(receipt, null, 2)); return; }
+    printRunReceipt(receipt);
+    return;
+  }
 
   const { summary, events: shown } = gatherReceipts({ project: projectFilter, limit });
   const counts = summary;
