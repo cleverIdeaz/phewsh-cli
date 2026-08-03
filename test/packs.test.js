@@ -4,8 +4,41 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const packs = require('../lib/packs');
+const { listCatalog } = require('../lib/skill-catalog');
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-pack-')); }
+
+test('pack metadata is derived from the canonical Skills Atlas catalog', () => {
+  const catalog = listCatalog({ view: 'packs' });
+  assert.deepEqual(Object.keys(packs.PACKS).sort(), catalog.map(entry => entry.id).sort());
+  for (const entry of catalog) {
+    const pack = packs.PACKS[entry.id];
+    assert.equal(pack.title, entry.name);
+    assert.equal(pack.desc, entry.summary);
+    assert.equal(pack.source, entry.source);
+    assert.equal(pack.license, entry.license);
+    assert.equal(pack.install, entry.install_command);
+  }
+});
+
+test('every managed-block catalog entry has exactly one complete vendored adapter', () => {
+  const expected = listCatalog({ view: 'atlas' })
+    .filter(entry => entry.install_mode === 'managed-block')
+    .map(entry => entry.id)
+    .sort();
+  const actual = Object.entries(packs.PACKS)
+    .filter(([, pack]) => pack.kind === 'vendored')
+    .map(([id]) => id)
+    .sort();
+
+  assert.deepEqual(actual, expected);
+  for (const id of expected) {
+    assert.ok(Array.isArray(packs.PACKS[id].targets) && packs.PACKS[id].targets.length > 0,
+      `${id} needs at least one managed target`);
+    assert.ok(typeof packs.PACKS[id].content === 'string' && packs.PACKS[id].content.trim(),
+      `${id} needs managed content`);
+  }
+});
 
 test('vendored pack installs a marked block, preserves user content, removes cleanly', () => {
   const d = tmp();

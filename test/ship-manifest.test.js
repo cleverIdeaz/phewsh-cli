@@ -12,6 +12,7 @@ const baseTest = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const catalog = require('../skills/catalog.json');
 
 const ROOT = path.join(__dirname, '..', '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf-8');
@@ -68,13 +69,39 @@ test('pages that exist and are meant to be public are staged', () => {
   const manifest = shipManifest();
   // Not every directory in this monorepo is a public page, so this is an
   // explicit list rather than a filesystem sweep.
-  for (const route of ['/x', '/build', '/desktop', '/cli', '/ion', '/platform', '/mcp']) {
+  for (const route of ['/x', '/build', '/desktop', '/cli', '/ion', '/platform', '/mcp', '/skills']) {
     assert.ok(
       fs.existsSync(path.join(ROOT, route.slice(1), 'index.html')),
       `${route}/index.html should exist`
     );
     assert.ok(covers(manifest, route), `${route} exists but is not in SHIP_MANIFEST`);
   }
+});
+
+test('Skills Atlas output is staged by exact generated paths, never a directory sweep', () => {
+  const manifest = shipManifest();
+  const generated = [
+    'skills/index.html',
+    'skills/catalog.json',
+    ...catalog.entries
+      .filter(entry => entry.source_path)
+      .map(entry => `skills/${entry.id}/SKILL.md`),
+  ];
+
+  assert.ok(!manifest.includes('skills/'), 'skills/ would sweep unrelated files into a release');
+  for (const file of generated) {
+    assert.ok(manifest.includes(file), `${file} is generated but absent from SHIP_MANIFEST`);
+  }
+});
+
+test('ship verifies the complete staged index before it creates a commit', () => {
+  const sh = read('ship.sh');
+  const staging = sh.indexOf('git add "$p"');
+  const verifier = sh.indexOf('node scripts/verify-ship-index.mjs');
+  const commit = sh.indexOf('git commit -m');
+
+  assert.ok(staging > -1 && verifier > staging, 'the index verifier must run after manifest staging');
+  assert.ok(commit > verifier, 'the index verifier must run before git commit');
 });
 
 // The live room is deliberately withheld until its Realtime authorization

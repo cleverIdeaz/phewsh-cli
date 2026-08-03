@@ -5,6 +5,7 @@
 //   phewsh task claim <id>      Manually claim + execute on an isolated branch + open a PR
 //   phewsh task clean-inputs    Remove Phewsh's local verified input cache
 //     --via <harness>           Route to a specific installed harness
+//     --project <id>            Run in a named registered project, not the current folder
 //
 // Boundaries (approved ruling): claiming is MANUAL — no daemon, no auto-claim.
 // Work happens on a dedicated branch in a dedicated worktree, never on main.
@@ -25,6 +26,8 @@ const {
   taskCaptureClaimRequest,
 } = require('../lib/task-captures');
 const { HARNESSES, listHarnesses } = require('../lib/harnesses');
+const { resolveClaimWorkspace } = require('../lib/local-claim');
+const { serveProjects, projectId } = require('../lib/projects-index');
 const { recordResultFile } = require('../lib/receipts-data');
 
 const b = (s) => `\x1b[1m${s}\x1b[0m`;
@@ -63,8 +66,8 @@ function git(args, cwd) {
   return execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
 }
 
-function loadCloudProjectId() {
-  const ppsPath = path.join(process.cwd(), '.intent', 'pps.json');
+function loadCloudProjectId(dir = process.cwd()) {
+  const ppsPath = path.join(dir, '.intent', 'pps.json');
   try {
     const pps = JSON.parse(fs.readFileSync(ppsPath, 'utf-8'));
     return pps?.adapters?.phewsh?.cloud_id || null;
@@ -73,8 +76,8 @@ function loadCloudProjectId() {
   }
 }
 
-async function loadProject(config) {
-  const cloudId = loadCloudProjectId();
+async function loadProject(config, cloudIdArg) {
+  const cloudId = cloudIdArg || loadCloudProjectId();
   if (!cloudId) {
     throw new Error('This project is not linked to the cloud. Run `phewsh push` (or `phewsh link <id>`) first.');
   }
@@ -83,11 +86,13 @@ async function loadProject(config) {
   return rows[0];
 }
 
-// The claiming CLI must be sitting in the repo this project coordinates.
-async function ensureRemoteMatch(project, config) {
+// The RESOLVED workspace must be the repo this cloud project coordinates.
+// Checked against that directory rather than `process.cwd()`, so the remote
+// that is verified is the remote of the repo that will actually be written to.
+async function ensureRemoteMatch(project, config, dir = process.cwd()) {
   let local;
   try {
-    local = normalizeRemote(git(['remote', 'get-url', 'origin'], process.cwd()));
+    local = normalizeRemote(git(['remote', 'get-url', 'origin'], dir));
   } catch {
     throw new Error('Not a git repository with an `origin` remote — claim from the project repo.');
   }
@@ -253,10 +258,30 @@ async function newTask(config, title) {
   console.log(`  ${g('Anyone on the project can now:')} ${w(`phewsh task claim ${rows[0].id.slice(0, 8)}`)}\n`);
 }
 
-async function claimTask(config, idArg, viaFlag) {
-  if (!idArg) throw new Error('Usage: phewsh task claim <task-id>');
-  const project = await loadProject(config);
-  await ensureRemoteMatch(project, config);
+async function claimTask(config, idArg, viaFlag, projectFlag) {
+  if (!idArg) throw new Error('Usage: phewsh task claim <task-id> [--via <harness>] [--project <id>]');
+  // WHERE this runs is decided by the machine's registry, not by where you are
+  // standing. `git rev-parse --show-toplevel` against `process.cwd()` used to
+  // answer it alone, so a directory that merely contained a convincing
+  // `.intent/pps.json` could execute a cloud task in a repo nobody registered.
+  // Same rule the serve route uses — one authority path, not two.
+  //
+  // Resolved BEFORE the cloud project is loaded, so the project identity comes
+  // from the repository that will actually be written to.
+  const workspace = resolveClaimWorkspace({
+    // Naming a project explicitly means it — the current folder's own cloud
+    // link must not constrain a choice that was stated, or `--project` would be
+    // useless from exactly the directory it exists to be used from.
+    cloudProjectId: projectFlag ? null : loadCloudProjectId(),
+    projects: serveProjects().map((p) => ({ ...p, id: projectId(p.path) })),
+    cwd: process.cwd(),
+    requestedProjectId: projectFlag,
+  });
+  const project = await loadProject(config, loadCloudProjectId(workspace.path));
+  await ensureRemoteMatch(project, config, workspace.path);
+  if (workspace.path !== process.cwd()) {
+    console.log(`\n  ${g('Running in registered project')} ${w(workspace.name)} ${g(workspace.path)}`);
+  }
 
   // Preflights BEFORE claiming, so a failed claim never strands a task.
   const harnessId = pickHarness(viaFlag, config);
@@ -309,7 +334,7 @@ async function claimTask(config, idArg, viaFlag) {
     }
 
   // Isolated worktree on a deterministic branch (task id = idempotency key).
-  const repoRoot = git(['rev-parse', '--show-toplevel'], process.cwd());
+  const repoRoot = workspace.path;
   const branch = taskBranch(claimed.id, claimed.title);
   const worktree = path.join(os.homedir(), '.phewsh', 'worktrees', `${path.basename(repoRoot)}-${claimed.id.slice(0, 8)}`);
   if (!fs.existsSync(worktree)) {
@@ -431,18 +456,24 @@ module.exports = async function run() {
   const sub = args[0] || 'list';
   const viaIdx = args.indexOf('--via');
   const via = viaIdx !== -1 ? args[viaIdx + 1] : null;
-  const rest = args.filter((a, i) => i > 0 && i !== viaIdx && i !== viaIdx + 1);
+  // `--project <id>` names the registered repo to run in, for the case where
+  // the current folder is not it. It is an explicit statement, never a default.
+  const projIdx = args.indexOf('--project');
+  const projectArg = projIdx !== -1 ? args[projIdx + 1] : null;
+  const rest = args.filter((a, i) => (
+    i > 0 && i !== viaIdx && i !== viaIdx + 1 && i !== projIdx && i !== projIdx + 1
+  ));
 
   try {
     if (sub === 'clean-inputs') return cleanLocalTaskInputs(rest[0]);
     const config = await getSession();
     if (sub === 'list') return await listTasks(config);
     if (sub === 'new') return await newTask(config, rest.join(' ').trim());
-    if (sub === 'claim') return await claimTask(config, rest[0], via);
+    if (sub === 'claim') return await claimTask(config, rest[0], via, projectArg);
     if (sub === 'invite') return await inviteTeammate(config, rest[0]);
     if (sub === 'join') return await joinProjects(config);
     if (sub === 'reconcile') return await reconcileTask(config, rest[0]);
-    console.log(`\n  Usage: phewsh task [list | new "<title>" | claim <id> [--via <harness>] | clean-inputs <id> | invite <email> | join]\n         phewsh dispatch ["<title>" | <id> | next] [--via <harness>]\n`);
+    console.log(`\n  Usage: phewsh task [list | new "<title>" | claim <id> [--via <harness>] [--project <id>] | clean-inputs <id> | invite <email> | join]\n         phewsh dispatch ["<title>" | <id> | next] [--via <harness>]\n`);
   } catch (err) {
     console.error(`\n  ${red('✗')} ${err.message}\n`);
     process.exitCode = 1;

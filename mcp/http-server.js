@@ -1,15 +1,37 @@
 #!/usr/bin/env node
 
 /**
- * PHEWSH MCP — HTTP transport.
+ * PHEWSH MCP — HTTP transport. LEGACY / COMPATIBILITY INFRASTRUCTURE.
+ *
+ * STATUS: this transport predates the binding contract and is kept for
+ * compatibility only. New work belongs on `phewsh serve`, which is the bound
+ * execution path: it requires a paired host grant and a project-scoped grant,
+ * resolves the project against the machine's own registry, re-verifies the live
+ * git origin, binds a human-reviewed action contract, and pins the branch and
+ * commit the run was approved against.
+ *
+ * This server has none of that and cannot acquire most of it: its project list
+ * comes from `loadProjects()` — a cloud cache plus one project minted from the
+ * server's own cwd — not from the machine registry, so there is no repository
+ * path, no remote, and therefore no branch or HEAD to bind. What it CAN prove
+ * is that a caller named an existing project exactly, and that is now required.
+ *
+ * It also does not execute anything. `./lib/dispatch-queue.js` imports no
+ * child_process; a packet accepted here runs inside whichever harness polls
+ * `/next`. Binding the identity is what keeps that harness able to check the
+ * repository, branch, HEAD and authority for itself before it acts.
+ *
+ * `isAllowedRequest` is an Origin check. It is a browser boundary, never
+ * authentication and never project authorization — see ../lib/cors.js.
  *
  * Exposes the coordination layer to the intent web app (and any other HTTP
- * client). Lives on 127.0.0.1:7483 by default, matching what
- * intent/app/src/lib/mcp-bridge.ts expects.
+ * client). Lives on 127.0.0.1:7483 by default — the same default port as
+ * `phewsh serve` — matching what intent/app/src/lib/mcp-bridge.ts expects.
  *
  * Endpoints:
  *   GET  /health           → { status, runtimes, version }
- *   POST /dispatch         → enqueue a packet, returns { jobId, status }
+ *   POST /dispatch         → enqueue a packet against an EXACT projectId,
+ *                            returns { jobId, status, projectId }
  *   GET  /status/:jobId    → polling endpoint for job state
  *   GET  /result/:jobId    → final result (kept after done for grace period)
  *   GET  /jobs             → list recent dispatches (for /mcp web page)
@@ -33,6 +55,7 @@ import receiptsData from "../lib/receipts-data.js";
 import {
   loadProjects, recordResult, recordSession, updateLocalStatusMd,
 } from "./lib/handlers.js";
+import { resolveExactProject, McpProjectError } from "./lib/resolve-project.js";
 import * as runtimes from "./lib/runtime-registry.js";
 import * as queue from "./lib/dispatch-queue.js";
 
@@ -93,6 +116,27 @@ function handleHealth(req, res) {
 async function handleDispatch(req, res) {
   try {
     const body = await readJsonBody(req);
+
+    // BINDING FIRST, before shape validation and before anything is queued.
+    //
+    // This endpoint used to accept an executable packet that named no project
+    // at all, and file the result under the literal string "web". An executable
+    // request without a project identity is not a valid Phewsh request, so the
+    // refusal is deliberate and breaking rather than a compatibility shim.
+    //
+    // `project_id` is accepted alongside `projectId` because the MCP tool
+    // surface is snake_case while this transport is camelCase. Both resolve
+    // through the SAME rule — an alias is a spelling, never a second gate.
+    let project;
+    try {
+      project = resolveExactProject(loadProjects(), body.projectId ?? body.project_id);
+    } catch (err) {
+      if (err instanceof McpProjectError) {
+        return json(req, res, err.status || 400, { error: err.message });
+      }
+      throw err;
+    }
+
     if (!body.packet || !body.packet.objective) {
       return json(req, res, 400, { error: "Missing packet.objective" });
     }
@@ -111,15 +155,21 @@ async function handleDispatch(req, res) {
       actionId: body.actionId,
       runtimeId: body.runtimeId || null,
       packet: body.packet,
+      // The RESOLVED id, never the string the caller sent. Everything after
+      // this point reads the project from the job.
+      projectId: project.id,
     });
 
-    recordSession(body.runtimeId || "web", "web", "dispatch_enqueued", {
+    // Filed under the project that was actually resolved. "web" told a reader
+    // nothing except that an HTTP client was involved.
+    recordSession(body.runtimeId || "web", project.id, "dispatch_enqueued", {
       jobId: job.jobId,
       actionId: job.actionId,
+      boundProjectId: project.id,
       taskSummary: body.packet?.objective?.task?.slice(0, 120),
     });
 
-    json(req, res, 200, { jobId: job.jobId, status: job.status });
+    json(req, res, 200, { jobId: job.jobId, status: job.status, projectId: project.id });
   } catch (err) {
     json(req, res, 400, { error: err.message });
   }
@@ -191,12 +241,34 @@ async function handleJobComplete(req, res, jobId) {
     const job = queue.getStatus(jobId);
     if (!job) return json(req, res, 404, { error: "Job not found" });
 
+    // The identity comes from the JOB, never from the completion body.
+    //
+    // A binding is only worth as much as its last consumer. This handler used
+    // to file evidence under whatever `projectId` the reporter sent (or "web"),
+    // so a run bound to A could be recorded against B by whoever reported it
+    // finished — the same substitution the dispatch gate now refuses, one step
+    // later. A body that names a DIFFERENT project is a conflict a human should
+    // see, not something to quietly overwrite.
+    const boundProjectId = job.projectId || null;
+    if (projectId && boundProjectId && projectId !== boundProjectId) {
+      return json(req, res, 409, {
+        error: "That completion names a different project than the job was bound to.",
+      });
+    }
+    if (!boundProjectId) {
+      // Only reachable for a job queued before this endpoint required a
+      // binding. Untraceable evidence is worse than a refused report.
+      return json(req, res, 409, {
+        error: "That job carries no project binding and predates this contract. Dispatch it again.",
+      });
+    }
+
     const updated = success
       ? queue.complete(jobId, result)
       : queue.fail(jobId, new Error(issues || result || "Failed"));
 
     recordResult({
-      projectId: projectId || "web",
+      projectId: boundProjectId,
       taskId: job.packet?.id || jobId,
       result,
       success,
@@ -205,14 +277,25 @@ async function handleJobComplete(req, res, jobId) {
       reportedAt: new Date().toISOString(),
     });
 
-    recordSession(agentId, projectId || "web", "task_complete", {
+    recordSession(agentId, boundProjectId, "task_complete", {
       taskId: job.packet?.id || jobId,
+      boundProjectId,
       success,
       result: result?.slice(0, 200),
     });
 
-    if (projectId === "local") {
-      updateLocalStatusMd(projectId, success, (result || "").split("\n")[0] || "Task completed", agentId);
+    if (boundProjectId === "local") {
+      // Resolved from the JOB's bound id, not from the reporter — and passed as
+      // a resolved project, so the write is gated on identity rather than on a
+      // string comparison against a magic name.
+      try {
+        updateLocalStatusMd(
+          resolveExactProject(loadProjects(), boundProjectId),
+          success, (result || "").split("\n")[0] || "Task completed", agentId,
+        );
+      } catch (error) {
+        if (!(error instanceof McpProjectError)) throw error;
+      }
     }
 
     if (agentId) runtimes.touch(agentId);

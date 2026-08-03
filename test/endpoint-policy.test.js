@@ -447,16 +447,31 @@ test('a job status is readable only by the grant that created that job', async (
   const port = PORT + 11;
   const { repo, env } = fixture();
   register(repo, env);
-  const child = startServe(port, repo, env);
+  // A route that really runs, so a job exists to be read. `runtimeId: 'none'`
+  // predates contract review and is refused there now — correctly, since it
+  // names nothing this machine can run.
+  const stub = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-pol-bin-'));
+  fs.writeFileSync(path.join(stub, 'claude'), '#!/bin/sh\necho "stub harness ran"\n');
+  fs.chmodSync(path.join(stub, 'claude'), 0o755);
+  const child = startServe(port, repo, { ...env, PATH: `${stub}${path.delimiter}${process.env.PATH}` });
   await waitForNode(port);
 
   const hostGrant = await pair(port, child);
   const project = await discover(port, hostGrant);
   const owner = await grantFor(port, hostGrant, project.id, ['work:run', 'work:control']);
 
+  const reviewed = await request(port, '/contract', {
+    method: 'POST', headers: projHdr(owner),
+    body: { projectId: project.id, runtimeId: 'claude-code', task: 'noop' },
+  });
+  assert.strictEqual(reviewed.status, 200, `contract review failed: ${reviewed.raw}`);
+
   const run = await request(port, '/dispatch', {
     method: 'POST', headers: projHdr(owner),
-    body: { projectId: project.id, actionId: 'echo', runtimeId: 'none', packet: { objective: { task: 'noop' } } },
+    body: {
+      projectId: project.id, actionId: 'echo', runtimeId: 'claude-code',
+      contractId: reviewed.body.contractId, packet: { objective: { task: 'noop' } },
+    },
   });
   assert.ok(run.status === 200 || run.status === 202, `dispatch refused for a work:run grant: ${run.raw}`);
   const jobId = run.body.jobId;

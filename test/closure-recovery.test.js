@@ -48,6 +48,7 @@ const receipt = {
   jobId: 'j-1',
   projectId: 'phewsh',
   boundProjectId: '8a849716ebfaf431',
+  boundProjectRemote: 'github.com/cleverideaz/phewsh',
   runtimeId: 'claude-code',
   runtimeLabel: 'Claude Code',
   status: 'done',
@@ -59,6 +60,7 @@ const receipt = {
   output: { bytes: 12, sha256: null },
   verificationCeiling: 'Not verified.',
   unknowns: [],
+  integrity: 'intact',
 };
 
 function proposalFor(intentDir, { markNextDone = true } = {}) {

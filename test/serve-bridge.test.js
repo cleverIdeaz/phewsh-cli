@@ -13,7 +13,7 @@ const http = require('node:http');
 const path = require('node:path');
 
 const BIN = path.join(__dirname, '..', 'bin', 'phewsh.js');
-const PORT = 7900 + Math.floor(Math.random() * 500);
+const PORT = 8100 + Math.floor(Math.random() * 200);
 
 function startServe(port, cwd, env = {}) {
   const child = spawn(process.execPath, [BIN, 'serve', '--port', String(port)], {
@@ -108,6 +108,29 @@ async function authorized(port, handle, scopes = ['truth:read', 'work:run', 'wor
   return { hostGrant, project, token };
 }
 
+/** A `claude` on PATH that exits cleanly, so a run can reach a terminal state cost-free. */
+function stubHarnessDir() {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-bridgebin-'));
+  const bin = path.join(dir, 'claude');
+  fs.writeFileSync(bin, '#!/bin/sh\necho "stub harness ran"\n');
+  fs.chmodSync(bin, 0o755);
+  return dir;
+}
+
+/**
+ * A run must name a contract the ENGINE composed and a human reviewed. These
+ * tests predate that requirement and were dispatching without one, so both were
+ * failing on the refusal instead of exercising the terminal behaviour they exist
+ * to pin. The contract is one-use and expires at use — get a fresh one per run.
+ */
+async function reviewedContract(port, projectId, runtimeId, task, token) {
+  const reviewed = await postJson(port, '/contract', { projectId, runtimeId, task }, token);
+  assert.strictEqual(reviewed.status, 200, `contract review failed: ${JSON.stringify(reviewed.body)}`);
+  return reviewed.body.contractId;
+}
+
 test('capability discovery is honest, and reaches only a paired caller', async () => {
   const handle = startServe(PORT);
   try {
@@ -171,34 +194,39 @@ test('capability discovery is honest, and reaches only a paired caller', async (
 // call null as a function, and take the ENTIRE node down with an unhandled
 // rejection, losing every other in-flight job. The guard belongs here, in the
 // engine that owns execution — not in a UI filter.
-test('dispatching an interactive-only harness fails that job and leaves the node alive', async () => {
+test('a route that cannot run here is refused before any job exists, and the node lives', async () => {
   const port = PORT + 3;
   const fx = registeredFixture('phewsh-bridge-interactive-');
   const handle = startServe(port, fx.repo, fx.env);
   try {
     await waitForListen(handle);
     const { project, token } = await authorized(port, handle);
-    const res = await postJson(port, '/dispatch', {
-      actionId: 'a1',
-      runtimeId: 'hermes',
-      projectId: project.id,
+
+    // This used to dispatch an interactive-only harness and wait for the job to
+    // fail. The refusal has since moved EARLIER, to contract review, which is
+    // the better place: nothing is queued, nothing spawns, and no run receipt
+    // claims an attempt that never happened. Which routes are refused, and why,
+    // is pinned per-reason in action-contract.test.js.
+    const refused = await postJson(port, '/contract', {
+      projectId: project.id, runtimeId: 'hermes', task: 'probe',
+    }, token);
+    assert.ok(refused.status >= 400, `expected a refusal, got ${refused.status}: ${JSON.stringify(refused.body)}`);
+    assert.match(String(refused.body.error), /cannot take a run/i);
+    assert.ok(!refused.body.contractId, 'a refusal must not hand back a contract');
+
+    // And with no contract, the run itself is still refused — the two gates are
+    // independent, so skipping review is not a way around the first one.
+    const dispatched = await postJson(port, '/dispatch', {
+      actionId: 'a1', runtimeId: 'hermes', projectId: project.id,
       packet: { objective: { task: 'probe' } },
     }, token);
-    assert.ok(res.body.jobId, `dispatch should be accepted, got: ${JSON.stringify(res.body)}`);
-
-    // The job must reach a truthful terminal error, not vanish.
-    let job = null;
-    for (let i = 0; i < 40; i++) {
-      job = await getJson(port, `/status/${res.body.jobId}`, projHdr(token));
-      if (['done', 'error', 'cancelled'].includes(job.status)) break;
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    assert.strictEqual(job.status, 'error');
-    assert.match(job.error, /interactive-only/i);
+    assert.ok(dispatched.status >= 400, 'dispatch without a reviewed contract must be refused');
+    assert.ok(!dispatched.body.jobId, 'a refused dispatch must not create a job');
 
     // The whole point: the node survived and still serves other requests.
     const health = await getJson(port, '/health');
     assert.strictEqual(health.status, 'ok');
+    assert.strictEqual(health.phewsh, true);
   } finally {
     handle.child.kill('SIGKILL');
   }
@@ -304,10 +332,20 @@ test('/claim accepts only the repo linked by cloud id and live origin', async ()
     const discovered = await getJson(PORT + 14, '/host/projects', hostHdr(hostGrant));
     assert.strictEqual(discovered.projects[0].cloudProjectId, projectId);
     const token = await grantFor(PORT + 14, hostGrant, discovered.projects[0].id, ['work:run']);
+    // A claim creates a branch, a worktree and a process, so it needs a reviewed
+    // contract first — the same lifecycle /contract → /dispatch uses.
+    // `test/claim-execution-binding.test.js` holds that binding itself.
+    const reviewed = await postJson(PORT + 14, '/claim/contract', {
+      projectId,
+      taskId: '22222222-2222-4222-8222-222222222222',
+      runtimeId: null,
+    }, token);
+    assert.strictEqual(reviewed.status, 200, `contract review refused: ${JSON.stringify(reviewed.body)}`);
     const response = await postJson(PORT + 14, '/claim', {
       projectId,
       taskId: '22222222-2222-4222-8222-222222222222',
       runtimeId: null,
+      contractId: reviewed.body.contractId,
     }, token);
     assert.strictEqual(response.status, 202);
     assert.strictEqual(response.body.status, 'accepted');
@@ -359,23 +397,37 @@ test('/cancel of an unknown job is a safe, idempotent no-op (lost-response retry
 test('/cancel never relabels a job that already reached a terminal state', async () => {
   const port = PORT + 16;
   const fx = registeredFixture('phewsh-bridge-cancel-terminal-');
-  const handle = startServe(port, fx.repo, fx.env);
+  // An uninstalled harness no longer reaches a job at all — it is refused at
+  // contract review. So this needs a route that really runs: a stub that exits
+  // cleanly, so the job reaches a terminal state honestly and cheaply.
+  const handle = startServe(port, fx.repo, {
+    ...fx.env,
+    PATH: `${stubHarnessDir()}${path.delimiter}${process.env.PATH}`,
+  });
   try {
     await waitForListen(handle);
     const { project, token } = await authorized(port, handle);
-    // Dispatch to an uninstalled harness so the job fails fast — no real agent runs.
+    const contractId = await reviewedContract(port, project.id, 'claude-code', 'noop', token);
     const dispatch = await postJson(port, '/dispatch', {
       actionId: 'cancel-test',
-      runtimeId: 'aider',
+      runtimeId: 'claude-code',
       projectId: project.id,
+      contractId,
       packet: { version: '1.0', id: 'cancel-test', objective: { task: 'noop' } },
     }, token);
-    assert.ok(dispatch.body.jobId, 'dispatch must return a jobId');
+    assert.ok(dispatch.body.jobId, `dispatch must return a jobId, got: ${JSON.stringify(dispatch.body)}`);
     const terminal = await pollStatus(port, dispatch.body.jobId, token);
-    assert.strictEqual(terminal.status, 'error', 'uninstalled harness must terminate as error');
-    // Cancelling a finished job must return its existing terminal status, not "cancelled".
+    assert.ok(['done', 'error'].includes(terminal.status), `expected terminal, got ${terminal.status}`);
+
+    // Cancelling a finished job must return its existing terminal status. A late
+    // cancel that relabels a finished run as "cancelled" would make the Record
+    // disagree with what actually happened on the machine.
     const cancel = await postJson(port, '/cancel', { jobId: dispatch.body.jobId }, token);
-    assert.strictEqual(cancel.body.status, 'error');
+    assert.strictEqual(cancel.body.status, terminal.status);
+
+    // Idempotent: asking twice does not eventually win.
+    const again = await postJson(port, '/cancel', { jobId: dispatch.body.jobId }, token);
+    assert.strictEqual(again.body.status, terminal.status);
   } finally {
     handle.child.kill('SIGKILL');
   }

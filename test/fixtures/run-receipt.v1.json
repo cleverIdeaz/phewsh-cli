@@ -5,6 +5,7 @@
   "jobId": "9b0a22a1-5a3b-43cb-be5f-1bd7710c80f1",
   "projectId": "phewsh",
   "boundProjectId": "8a849716ebfaf431",
+  "boundProjectRemote": "github.com/cleverIdeaz/phewsh",
   "runtimeId": "claude-code",
   "runtimeLabel": "Claude Code",
   "startedAt": "2026-07-29T02:19:11.929Z",
@@ -49,7 +50,8 @@
   },
   "output": {
     "bytes": 24,
-    "sha256": "3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f"
+    "sha256": "3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f3b1f",
+    "truncated": false
   },
   "evidence": {
     "receiptFile": "receipts/r-9b0a22a15a3b43cb.json",

@@ -47,7 +47,7 @@ function prune(store) {
   }
 }
 
-export function enqueue({ actionId, runtimeId, packet }) {
+export function enqueue({ actionId, runtimeId, packet, projectId = null }) {
   const jobId = randomUUID();
   const now = new Date().toISOString();
   /** @type {Job} */
@@ -55,6 +55,12 @@ export function enqueue({ actionId, runtimeId, packet }) {
     jobId,
     actionId: actionId || jobId,
     runtimeId: runtimeId || null,
+    // The project this packet was RESOLVED to, not the string a caller sent.
+    // A queued packet nobody can trace back to a project is not evidence of
+    // anything, and every later consumer reads the identity from here so the
+    // requested, queued and recorded project cannot diverge.
+    projectId,
+    boundAt: now,
     packet,
     status: "queued",
     statusText: "Queued for next runtime pickup",

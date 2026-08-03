@@ -71,7 +71,9 @@ test('structured Next uses only now, next, and done and carries the active goal'
   assert.equal(next.items.filter((item) => item.state === 'now').length, 1);
   assert.ok(next.items.every((item) => allowed.has(item.state)));
   const active = next.items.find((item) => item.state === 'now');
-  assert.equal(active.id, 'cross-harness-excellence');
+  assert.equal(active.id, 'ship-living-project-layer');
+  // The active goal must always carry a human-verified gate, so no agent can
+  // declare the whole goal done on its own.
   assert.ok(active.criteria.some((criterion) => criterion.type === 'human' && /Two real accounts/.test(criterion.expected)));
 });
 

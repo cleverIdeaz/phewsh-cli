@@ -21,8 +21,13 @@ const claude = {
   auth: 'Claude subscription / Console',
 };
 
+// The commit baseline a run is approved against. What it must CONTAIN is
+// pinned in cli/test/contract-checkout-binding.test.js; here it is just the
+// fixture every contract now requires.
+const checkout = { branch: 'main', head: 'a'.repeat(40) };
+
 const build = (over = {}) => buildActionContract({
-  task: 'run the tests', runtime: claude, project, ...over,
+  task: 'run the tests', runtime: claude, project, checkout, ...over,
 });
 
 test('names WHERE the run happens — the binding a person is actually approving', () => {

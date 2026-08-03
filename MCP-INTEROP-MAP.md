@@ -3,6 +3,31 @@
 > The plan for turning `phewsh mcp` (CLI) and `phewsh.com` (web) into one
 > synchronized coordination layer that any AI harness can plug into.
 
+> **STATUS 2026-08-01 — the HTTP transport described below is LEGACY /
+> COMPATIBILITY infrastructure.** The bound execution path is `phewsh serve`:
+> paired host grant, project-scoped grant, project resolved against the machine
+> registry, live git origin re-verified, human-reviewed action contract, and the
+> branch + commit the run was approved against pinned and re-checked before the
+> harness starts. The HTTP transport has none of that and cannot acquire most of
+> it — its project list is a cloud cache plus one project minted from the
+> server's own cwd, so there is no repository path, no remote, and therefore no
+> branch or HEAD to bind.
+>
+> What it CAN prove is now required: **`POST /dispatch` refuses any request that
+> does not name an existing project by exact id.** Missing → 400, unknown → 404,
+> duplicated → 409. No `"local"` fallback, no display-name matching, no
+> first-result fallback. The resolved id is attached to the queued job and is the
+> identity every later consumer reads, including `/jobs/:id/complete`, which now
+> refuses a completion that names a different project rather than re-filing the
+> run. Evidence is recorded under that resolved id — never the literal `"web"`.
+>
+> `isAllowedRequest` is an Origin check. It is a browser boundary, never
+> authentication and never project authorization.
+>
+> New work belongs on `phewsh serve`. Removal of this transport is proposed
+> separately, with evidence, once a consumer search settles — see
+> `handoffs/DESKTOP_AND_ADAPTER_BINDING_AUDIT_2026-07-31.md`.
+
 ## What this is solving
 
 Today, phewsh has substantial coordination infrastructure that doesn't yet

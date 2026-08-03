@@ -10,6 +10,23 @@
 // backdoor in the product, and the tests would stop proving the thing they
 // exist to prove.
 
+// ── Port bands: keep these disjoint ──────────────────────────────────────────
+//
+// Node-level suites run in parallel, and two nodes on one port is NOT a loud
+// failure. `waitForNode` succeeds against whichever one is listening, and the
+// pairing code is then printed on the OTHER child's stdout — so it surfaces as
+// "the node never displayed an approval code for the human to read", which
+// reads exactly like a timing flake and was misfiled as one for weeks.
+//
+// Each suite owns a band wide enough for its random offset plus its highest
+// `PORT + N`. If you add a suite, take a NEW band; do not squeeze into a gap.
+//
+//   7400–7527  claim-execution-binding      7840–7906  closure-endpoints
+//   7560–7630  local-session                7940–7990  dispatch-binding
+//   7660–7720  mcp-http-binding             8100–8316  serve-bridge
+//   7760–7800  cancellation-truthfulness    8500–8622  endpoint-policy
+//   8700–8764  ground-project               8800–8893  critic-findings
+//
 const assert = require('node:assert');
 const http = require('node:http');
 

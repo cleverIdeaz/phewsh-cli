@@ -20,19 +20,19 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     :root {
-      --bg: #0a0c0b;
-      --bg-card: rgba(17, 20, 19, 0.6);
-      --bg-code: #0d100f;
+      --bg: #0f0e0c;
+      --bg-card: rgba(23,21,15,0.6);
+      --bg-code: #141210;
       --bg-hover: rgba(255,255,255,0.03);
-      --text: #f0ebe1;
-      --text-muted: #afc3b9;
-      --text-dim: #828e8a;
-      --border: #1e2422;
-      --accent: #64d7c3;
-      --accent-glow: rgba(100, 215, 195, 0.15);
-      --warm: #ffc391;
-      --green: #64d7c3;
-      --yellow: #dc8c5a;
+      --text: #f1ece1;
+      --text-muted: #c3bbaa;
+      --text-dim: #9a917d;
+      --border: #272219;
+      --accent: #c79a4a;
+      --accent-glow: rgba(199,154,74, 0.15);
+      --warm: #d8a13f;
+      --green: #5fa87d;
+      --yellow: #d8a13f;
     }
 
 
@@ -89,7 +89,7 @@
       padding: 20px 24px 8px;
       flex-shrink: 0;
     }
-    
+
     .header .brand-svg:hover { opacity: 1; }
     .header h1 {
       font-size: 15px;
@@ -187,11 +187,11 @@
     }
     .code-block:hover .copy-btn {
       color: var(--accent);
-      border-color: rgba(100,215,195,0.25);
+      border-color: rgba(199,154,74,0.25);
     }
     .code-block .copy-btn.copied {
       color: var(--green);
-      border-color: rgba(100,215,195,0.3);
+      border-color: rgba(199,154,74,0.3);
     }
 
     /* ─── 3-CARD GRID ─── */
@@ -216,7 +216,7 @@
       flex-direction: column;
     }
     .card:hover {
-      border-color: rgba(100,215,195,0.2);
+      border-color: rgba(199,154,74,0.2);
       transform: translateY(-2px);
     }
     .card .step-num {
@@ -226,7 +226,7 @@
       width: 22px;
       height: 22px;
       border-radius: 50%;
-      background: rgba(100,215,195,0.08);
+      background: rgba(199,154,74,0.08);
       color: var(--accent);
       font-family: "JetBrains Mono", monospace;
       font-size: 11px;
@@ -258,7 +258,7 @@
       margin-bottom: 10px;
       transition: border-color 0.2s;
     }
-    .card .card-code:hover { border-color: rgba(100,215,195,0.25); }
+    .card .card-code:hover { border-color: rgba(199,154,74,0.25); }
     .card .card-code > span { min-width: 0; }
     .card .card-code .cc-text { color: var(--text); overflow-wrap: anywhere; }
     .card .card-code .cc-prompt { color: var(--green); margin-right: 4px; }
@@ -318,7 +318,7 @@
       cursor: default;
     }
     .int-badge:hover {
-      border-color: rgba(100,215,195,0.2);
+      border-color: rgba(199,154,74,0.2);
       color: var(--text);
     }
     .int-badge .dot {
@@ -412,7 +412,7 @@
       overflow: hidden;
       transition: border-color 0.2s;
     }
-    details:hover { border-color: rgba(100,215,195,0.15); }
+    details:hover { border-color: rgba(199,154,74,0.15); }
     details summary {
       padding: 14px 18px;
       cursor: pointer;
@@ -500,7 +500,7 @@
       font-size: 11px;
       padding: 3px 10px;
       border-radius: 4px;
-      background: rgba(100,215,195,0.08);
+      background: rgba(199,154,74,0.08);
       color: var(--accent);
       white-space: nowrap;
     }
@@ -532,17 +532,18 @@
 </head>
 <body>
   <!-- platform tabs: identical strip on every platform-facet page; script highlights where you are -->
-  <nav id="phewsh-platform-tabs" style="display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;padding:8px 16px;font-family:'Inter',-apple-system,sans-serif;font-size:12px;background:rgba(100,215,195,0.04);border-bottom:1px solid #1e2422;">
-    <span style="color:#828e8a;letter-spacing:0.06em;margin-right:8px;">PHEWSH platform</span>
-    <a data-path="/" href="/" title="Home" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">Home</a>
-    <a data-path="/demo" href="/demo" title="See a bounded Claude Code → Codex handoff and verify its receipt" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">How it works</a>
-    <a data-path="/cli" href="/cli" title="The terminal front door — curl -fsSL phewsh.com/install.sh | sh" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">CLI</a>
-    <a data-path="/platform" data-group="/platform,/cockpit,/mcp,/api" href="/platform" title="Docs — platform, cockpit, agents, API" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">Docs</a>
-    <a data-path="/cli#packs" href="/cli#packs" title="Opt-in workflow packs — Karpathy, GSD…" style="color:#828e8a;text-decoration:none;padding:3px 10px;border-radius:6px;">Packs</a>
-    <span style="color:#1e2422;margin:0 6px;">|</span>
-    <a href="/intent" title="Define project truth in the browser; terminal sync happens only when you push or pull" style="color:#ffc391;text-decoration:none;padding:3px 10px;">Intent web app &#8599;</a>
+  <nav id="phewsh-platform-tabs" style="display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;padding:8px 16px;font-family:'Inter',-apple-system,sans-serif;font-size:12px;background:rgba(199,154,74,0.04);border-bottom:1px solid #272219;">
+    <span style="color:#6f6857;letter-spacing:0.06em;margin-right:8px;">PHEWSH platform</span>
+    <a data-path="/" href="/" title="Home" style="color:#9a917d;text-decoration:none;padding:3px 10px;border-radius:6px;">Home</a>
+    <a data-path="/demo" href="/demo" title="See a bounded Claude Code → Codex handoff and verify its receipt" style="color:#9a917d;text-decoration:none;padding:3px 10px;border-radius:6px;">How it works</a>
+    <a data-path="/cli" href="/cli" title="The terminal front door — curl -fsSL phewsh.com/install.sh | sh" style="color:#9a917d;text-decoration:none;padding:3px 10px;border-radius:6px;">CLI</a>
+    <a data-path="/connect" href="/connect" title="Connect Claude, ChatGPT, Codex and the CLI to one record" style="color:#9a917d;text-decoration:none;padding:3px 10px;border-radius:6px;">Connect</a>
+    <a data-path="/platform" data-group="/platform,/cockpit,/mcp,/api" href="/platform" title="Docs — platform, cockpit, agents, API" style="color:#9a917d;text-decoration:none;padding:3px 10px;border-radius:6px;">Docs</a>
+    <a data-path="/cli#packs" href="/cli#packs" title="Opt-in workflow packs — Karpathy, GSD…" style="color:#9a917d;text-decoration:none;padding:3px 10px;border-radius:6px;">Packs</a>
+    <span style="color:#332b1e;margin:0 6px;">|</span>
+    <a href="/intent" title="Define project truth in the browser; terminal sync happens only when you push or pull" style="color:#c79a4a;text-decoration:none;padding:3px 10px;">Intent web app &#8599;</a>
   </nav>
-  <script>(function(){var p=location.pathname.replace(/\/+$/,'')||'/';document.querySelectorAll('#phewsh-platform-tabs a[data-path]').forEach(function(a){var g=(a.getAttribute('data-group')||'').split(',');if(a.getAttribute('data-path')===p||g.indexOf(p)>-1){a.style.color='#64d7c3';a.style.background='rgba(100,215,195,0.10)';a.style.fontWeight='600';}});})();</script>
+  <script>(function(){var p=location.pathname.replace(/\/+$/,'')||'/';document.querySelectorAll('#phewsh-platform-tabs a[data-path]').forEach(function(a){var g=(a.getAttribute('data-group')||'').split(',');if(a.getAttribute('data-path')===p||g.indexOf(p)>-1){a.style.color='#c79a4a';a.style.background='rgba(199,154,74,0.10)';a.style.fontWeight='600';}});})();</script>
 
   <!-- Header -->
   <div class="header">
@@ -654,95 +655,189 @@
     </p>
   </div>
 
-  <!-- Packs — opt-in workflow opinions layered on top of continuity -->
-  <div class="packs" id="packs" style="margin-top:64px;max-width:760px;margin-left:auto;margin-right:auto;">
+  <!-- SKILLS_ATLAS:PACKS_START -->
+  <div class="packs" id="packs" style="margin-top:64px;max-width:960px;margin-left:auto;margin-right:auto;">
     <div class="section-label" style="text-align:center;">Packs</div>
-    <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(1.3rem,3.4vw,1.9rem);letter-spacing:-0.02em;text-align:center;margin:8px auto 14px;">One continuity layer.<br><em style="color:var(--accent);font-style:normal;">Many schools of thought.</em></h2>
-    <p style="font-size:0.96rem;line-height:1.7;color:rgba(255,255,255,0.72);text-align:center;max-width:600px;margin:0 auto 32px;">
-      phewsh's core is continuity — your project truth, shared across compatible AI tools. <strong>Packs</strong> are opt-in
-      workflow opinions you layer on top: proven guidelines from people who've shipped. Always attributed,
-      project-scoped, and reversible — nothing is written without your <code>y/N</code>.
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(1.3rem,3.4vw,1.9rem);letter-spacing:-0.02em;text-align:center;margin:8px auto 14px;">Install from one catalog.<br><em style="color:var(--accent);font-style:normal;">Keep the truth upstream.</em></h2>
+    <p style="font-size:.96rem;line-height:1.7;color:rgba(255,255,255,.72);text-align:center;max-width:660px;margin:0 auto 22px;">
+      Packs are the installation interface: managed additions are previewed and reversible; linked projects remain with their creators. Metadata, provenance, and trust state come from the same catalog as the public Atlas.
     </p>
-
+    <p style="text-align:center;margin:0 auto 30px;"><a href="/skills/" style="color:rgba(0,232,245,.85);font-weight:700;">Open the canonical Skills Atlas →</a></p>
     <div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));">
       <div class="card">
-        <h3>karpathy-style <span style="font-family:monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(0,232,245,0.75);border:1px solid rgba(0,232,245,0.3);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;">vendored</span></h3>
-        <p class="card-desc">Andrej Karpathy's coding guidelines — think before coding, prefer simplicity, make surgical changes, drive loops by goals. Written as a clearly-marked, removable block in your <code>CLAUDE.md</code> / <code>AGENTS.md</code>.</p>
-        <div class="card-code" onclick="copy(this, 'phewsh pack install karpathy-style'); event.stopPropagation();">
+        <h3>Boat to Shore <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">skill-copy</span></h3>
+        <p class="card-desc">Move one repository from unfinished to verified and shippable, one bounded slice and one honest handoff at a time.</p>
+        <div class="card-code" data-command="mkdir -p ~/.claude/skills/boat-to-shore &amp;&amp; curl -fsSL https://raw.githubusercontent.com/cleverIdeaz/phewsh-cli/main/skills/boat-to-shore/SKILL.md -o ~/.claude/skills/boat-to-shore/SKILL.md" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">mkdir -p ~/.claude/skills/boat-to-shore &amp;&amp; curl -fsSL https://raw.githubusercontent.com/cleverIdeaz/phewsh-cli/main/skills/boat-to-shore/SKILL.md -o ~/.claude/skills/boat-to-shore/SKILL.md</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Phewsh Original · Phewsh tested</p>
+      </div>
+      <div class="card">
+        <h3>Portfolio Boat Loop <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">skill-copy</span></h3>
+        <p class="card-desc">Choose which repository receives the next execution window without losing portfolio-level state.</p>
+        <div class="card-code" data-command="mkdir -p ~/.claude/skills/portfolio-boat-loop &amp;&amp; curl -fsSL https://raw.githubusercontent.com/cleverIdeaz/phewsh-cli/main/skills/portfolio-boat-loop/SKILL.md -o ~/.claude/skills/portfolio-boat-loop/SKILL.md" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">mkdir -p ~/.claude/skills/portfolio-boat-loop &amp;&amp; curl -fsSL https://raw.githubusercontent.com/cleverIdeaz/phewsh-cli/main/skills/portfolio-boat-loop/SKILL.md -o ~/.claude/skills/portfolio-boat-loop/SKILL.md</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Phewsh Original · Phewsh tested</p>
+      </div>
+      <div class="card">
+        <h3>Karpathy-style Coding Guidelines <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(0,232,245,.78);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">managed-block</span></h3>
+        <p class="card-desc">Add concise think-first, simplicity, surgical-change, and goal-driven coding guidance to project agent files.</p>
+        <div class="card-code" data-command="phewsh pack install karpathy-style" onclick="copy(this, this.dataset.command); event.stopPropagation();">
           <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install karpathy-style</span></span>
           <span class="cc-copy">Copy</span>
         </div>
-        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,0.4);">source: <a href="https://github.com/multica-ai/andrej-karpathy-skills" style="color:rgba(0,232,245,0.7);">github.com/multica-ai/andrej-karpathy-skills</a></p>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Adapted from · Phewsh tested</p>
       </div>
       <div class="card">
-        <h3>gsd <span style="font-family:monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;">linked</span></h3>
-        <p class="card-desc">Get Shit Done — a Claude-centric workflow (hooks, commands, planning). Its own tool, so phewsh points you at the upstream installer rather than vendoring it.</p>
-        <div class="card-code" onclick="copy(this, 'phewsh pack install gsd'); event.stopPropagation();">
-          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install gsd</span></span>
+        <h3>Model Routing <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(0,232,245,.78);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">managed-block</span></h3>
+        <p class="card-desc">Plan high, execute wide, and judge high by routing work according to intelligence, taste, cost, and effort.</p>
+        <div class="card-code" data-command="phewsh pack install model-routing" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install model-routing</span></span>
           <span class="cc-copy">Copy</span>
         </div>
-        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,0.4);">source: <a href="https://github.com/gsd-build/get-shit-done" style="color:rgba(0,232,245,0.7);">github.com/gsd-build/get-shit-done</a></p>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Phewsh Synthesis · Phewsh tested</p>
       </div>
       <div class="card">
-        <h3>loop-library / loopy <span style="font-family:monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;">linked</span></h3>
-        <p class="card-desc">Forward Future's practical agent loops and Loopy skill, with explicit checks and stopping conditions. Useful Work-layer inspiration; phewsh links to it without becoming a scheduler.</p>
-        <div class="card-code" onclick="copy(this, 'phewsh pack install loop-library'); event.stopPropagation();">
+        <h3>Governance Audits <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(0,232,245,.78);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">managed-block</span></h3>
+        <p class="card-desc">Audit whether an AI-assisted project remains goal-oriented, evidence-backed, governable, and transferable.</p>
+        <div class="card-code" data-command="phewsh pack install governance-audits" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install governance-audits</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Inspired by · Phewsh tested</p>
+      </div>
+      <div class="card">
+        <h3>Loopy / Loop Library <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">Composable agent loops with explicit checks and stopping conditions.</p>
+        <div class="card-code" data-command="phewsh pack install loop-library" onclick="copy(this, this.dataset.command); event.stopPropagation();">
           <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install loop-library</span></span>
           <span class="cc-copy">Copy</span>
         </div>
-        <div class="card-code" onclick="copy(this, 'npx skills add Forward-Future/loop-library --skill loopy -g'); event.stopPropagation();" style="margin-top:8px;">
-          <span><span class="cc-prompt">$</span><span class="cc-text">npx skills add Forward-Future/loop-library --skill loopy -g</span></span>
-          <span class="cc-copy">Copy</span>
-        </div>
-        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,0.4);">source: <a href="https://signals.forwardfuture.com/loop-library/" style="color:rgba(0,232,245,0.7);">signals.forwardfuture.com/loop-library</a> · <a href="https://github.com/Forward-Future/loop-library" style="color:rgba(0,232,245,0.7);">GitHub</a></p>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
       </div>
       <div class="card">
-        <h3>matt-skills <span style="font-family:monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;">linked</span></h3>
-        <p class="card-desc">Engineering skills for debugging, TDD, domain modeling, handoff, git guardrails, and design review. A practical upstream library, not Phewsh-owned content.</p>
-        <div class="card-code" onclick="copy(this, 'phewsh pack install matt-skills'); event.stopPropagation();">
+        <h3>Skills for Real Engineers <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">Composable engineering skills for requirements, TDD, diagnosis, research, architecture, review, and handoffs.</p>
+        <div class="card-code" data-command="phewsh pack install matt-skills" onclick="copy(this, this.dataset.command); event.stopPropagation();">
           <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install matt-skills</span></span>
           <span class="cc-copy">Copy</span>
         </div>
-        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,0.4);">source: <a href="https://github.com/mattpocock/skills" style="color:rgba(0,232,245,0.7);">github.com/mattpocock/skills</a></p>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
       </div>
       <div class="card">
-        <h3>skillspector <span style="font-family:monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;">linked</span></h3>
-        <p class="card-desc">NVIDIA's security scanner for AI-agent skills. A strong candidate for future pack vetting before install, publishing, or team distribution.</p>
-        <div class="card-code" onclick="copy(this, 'phewsh pack install skillspector'); event.stopPropagation();">
+        <h3>GSD <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">A complete spec-driven planning, execution, research, debugging, and verification workflow.</p>
+        <div class="card-code" data-command="phewsh pack install gsd" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install gsd</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
+      </div>
+      <div class="card">
+        <h3>gstack <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">An opinionated collection of CEO, design, engineering, QA, review, browser, and shipping workflows.</p>
+        <div class="card-code" data-command="phewsh pack install gstack" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install gstack</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
+      </div>
+      <div class="card">
+        <h3>DeerFlow <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">An agent harness with subagents, memory, sandboxes, and skills.</p>
+        <div class="card-code" data-command="phewsh pack install deer-flow" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install deer-flow</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
+      </div>
+      <div class="card">
+        <h3>Hermes Agent <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">A separate agent harness mapped as a compatibility candidate.</p>
+        <div class="card-code" data-command="phewsh pack install hermes-agent" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install hermes-agent</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
+      </div>
+      <div class="card">
+        <h3>Anthropic Cybersecurity Skills <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">A large security-focused community skill collection that requires deliberate scope review.</p>
+        <div class="card-code" data-command="phewsh pack install cybersecurity-skills" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install cybersecurity-skills</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
+      </div>
+      <div class="card">
+        <h3>SkillSpector <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">A security scanner for AI-agent skills; a scan is evidence, not a guarantee.</p>
+        <div class="card-code" data-command="phewsh pack install skillspector" onclick="copy(this, this.dataset.command); event.stopPropagation();">
           <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install skillspector</span></span>
           <span class="cc-copy">Copy</span>
         </div>
-        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,0.4);">source: <a href="https://github.com/nvidia/skillspector" style="color:rgba(0,232,245,0.7);">github.com/nvidia/skillspector</a></p>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
       </div>
       <div class="card">
-        <h3>codebase-memory-mcp <span style="font-family:monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;">linked</span></h3>
-        <p class="card-desc">A code-intelligence MCP server for repository memory and fast code lookup. Configure per harness; phewsh only points to the upstream project.</p>
-        <div class="card-code" onclick="copy(this, 'phewsh pack install codebase-memory-mcp'); event.stopPropagation();">
+        <h3>Codebase Memory MCP <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">A persistent code-intelligence MCP server for repository memory and lookup.</p>
+        <div class="card-code" data-command="phewsh pack install codebase-memory-mcp" onclick="copy(this, this.dataset.command); event.stopPropagation();">
           <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install codebase-memory-mcp</span></span>
           <span class="cc-copy">Copy</span>
         </div>
-        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,0.4);">source: <a href="https://github.com/DeusData/codebase-memory-mcp" style="color:rgba(0,232,245,0.7);">github.com/DeusData/codebase-memory-mcp</a></p>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
       </div>
       <div class="card">
-        <h3>unlimited-ocr <span style="font-family:monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;">linked</span></h3>
-        <p class="card-desc">Baidu's local/GPU OCR model candidate for images and PDFs. Potentially useful for recipe capture, but heavy and never auto-installed.</p>
-        <div class="card-code" onclick="copy(this, 'phewsh pack install unlimited-ocr'); event.stopPropagation();">
+        <h3>Unlimited OCR <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">A local or GPU OCR candidate for image and PDF workflows.</p>
+        <div class="card-code" data-command="phewsh pack install unlimited-ocr" onclick="copy(this, this.dataset.command); event.stopPropagation();">
           <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install unlimited-ocr</span></span>
           <span class="cc-copy">Copy</span>
         </div>
-        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,0.4);">source: <a href="https://github.com/baidu/Unlimited-OCR" style="color:rgba(0,232,245,0.7);">github.com/baidu/Unlimited-OCR</a></p>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
+      </div>
+      <div class="card">
+        <h3>Palmier Pro <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">An open-source macOS video editor with an MCP surface.</p>
+        <div class="card-code" data-command="phewsh pack install palmier-pro" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install palmier-pro</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
+      </div>
+      <div class="card">
+        <h3>OpenMontage <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">An agentic video-production system with pipelines, tools, and skills.</p>
+        <div class="card-code" data-command="phewsh pack install openmontage" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install openmontage</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
+      </div>
+      <div class="card">
+        <h3>Hyperframes <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">HTML-to-video rendering for agent-produced demos and media.</p>
+        <div class="card-code" data-command="phewsh pack install hyperframes" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install hyperframes</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
+      </div>
+      <div class="card">
+        <h3>Voicebox <span style="font-family:monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 6px;margin-left:6px;">upstream</span></h3>
+        <p class="card-desc">An open-source AI voice studio for audio workflows.</p>
+        <div class="card-code" data-command="phewsh pack install voicebox" onclick="copy(this, this.dataset.command); event.stopPropagation();">
+          <span><span class="cc-prompt">$</span><span class="cc-text">phewsh pack install voicebox</span></span>
+          <span class="cc-copy">Copy</span>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:rgba(255,255,255,.4);">Linked upstream · Unreviewed</p>
       </div>
     </div>
-
-    <p style="margin-top:22px;font-size:.84rem;color:rgba(255,255,255,0.5);text-align:center;">
-      More linked labs in the CLI: <code>deer-flow</code>, <code>hermes-agent</code>, <code>voicebox</code>, <code>palmier-pro</code>, <code>openmontage</code>, <code>hyperframes</code>, <code>gstack</code>, and <code>cybersecurity-skills</code>.
-    </p>
-    <p style="margin-top:10px;font-size:.84rem;color:rgba(255,255,255,0.5);text-align:center;">
-      List them with <code>phewsh pack</code> · reverse cleanly with <code>phewsh pack remove &lt;name&gt;</code> · or inside the
-      <code>phewsh</code> front door, just type <code>/pack</code>.
-    </p>
   </div>
-
+<!-- SKILLS_ATLAS:PACKS_END -->
   <!-- How it works — laymen first, then the real mechanics -->
   <div class="how-it-works" style="margin-top:64px;max-width:760px;margin-left:auto;margin-right:auto;">
     <div class="section-label" style="text-align:center;">How it works</div>

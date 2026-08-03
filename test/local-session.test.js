@@ -25,7 +25,7 @@ const os = require('node:os');
 const { request, waitForNode, pair, listProjects, grantFor, projHdr } = require('./helpers/grants');
 
 const BIN = path.join(__dirname, '..', 'bin', 'phewsh.js');
-const PORT = 7600 + Math.floor(Math.random() * 200);
+const PORT = 7560 + Math.floor(Math.random() * 60);
 
 const children = [];
 after(() => { for (const c of children) { try { c.kill(); } catch { /* already gone */ } } });
@@ -65,6 +65,14 @@ function register(repo, env) {
   run(process.execPath, [BIN, 'project', 'add']);
 }
 
+function setOrigin(repo, url) {
+  const { execFileSync } = require('node:child_process');
+  execFileSync('git', ['remote', 'set-url', 'origin', url], {
+    cwd: repo,
+    stdio: 'ignore',
+  });
+}
+
 test('a registered project exposes a stable id so nothing resolves by display name', async () => {
   const { repo, env } = fixture();
   register(repo, env);
@@ -99,6 +107,28 @@ test('the retired handshake issues nothing and says what replaced it', async () 
   assert.strictEqual(res.status, 410, 'the free-token handshake must be gone, not merely unused');
   assert.ok(!res.body.sessionToken, 'it still handed out a token');
   assert.match(String(res.body.replacedBy || ''), /host\/pair/u, 'a stale client is not told where to go');
+});
+
+test('local truth stops when the registered repository identity drifts', async () => {
+  const port = PORT + 2;
+  const { repo, env } = fixture();
+  register(repo, env);
+  const child = startServe(port, repo, env);
+  await waitForNode(port);
+  const hostGrant = await pair(port, child);
+  const [project] = await listProjects(port, hostGrant);
+  const grant = await grantFor(port, hostGrant, project.id, ['truth:read']);
+
+  setOrigin(repo, 'https://github.com/example/different-project.git');
+  const drifted = await request(
+    port,
+    `/local-truth?projectId=${project.id}`,
+    { headers: projHdr(grant) },
+  );
+
+  assert.strictEqual(drifted.status, 409,
+    `a grant kept reading after the repo identity changed (${drifted.status})`);
+  assert.ok(!drifted.body?.vision, 'project truth crossed into the new repository identity');
 });
 
 test('an unregistered or unknown project id is refused — never a first-match fallback', async () => {
@@ -246,5 +276,72 @@ test('a registered repo with no .intent is reported honestly, not as an empty wo
   const res = await request(port, `/local-truth?projectId=${target.id}`, { headers: projHdr(grant) });
   assert.strictEqual(res.status, 200);
   assert.strictEqual(res.body.intentPresent, false);
-  assert.match(res.body.reason, /phewsh intent --init/u, 'must name the single prerequisite');
+  // It reports a STATE, and names the capability that resolves it — it no
+  // longer hands the person a terminal command to go and type. A surface can
+  // ground the project from where they already are (POST /ground), so telling
+  // them to leave and run `phewsh intent --init` was the dead end, not the fix.
+  assert.match(res.body.reason, /no recorded truth yet/u, 'must say plainly what is missing');
+  assert.doesNotMatch(res.body.reason, /phewsh intent --init/u,
+    'a state must not be reported as a command to copy');
+  assert.strictEqual(res.body.groundable, true, 'must name that this project can be grounded');
+});
+
+// A confident vision that is quietly stale is worse than no vision.
+//
+// `phewsh status` has always measured this — `.intent/` committed N commits ago,
+// HEAD N commits further on — and Ion never received it. So the room could show
+// a project's north star in full confidence while the code had moved a long way
+// past it. This repository was itself 93 commits adrift on the day this was
+// written, which is exactly how it goes unnoticed.
+//
+// Noticing drift is the accountability half of the promise. It is a plain-
+// language RISK, not a command to run, so it belongs in the truth every surface
+// reads rather than in one surface's own logic.
+test('/local-truth reports how far the recorded truth has fallen behind the code', async () => {
+  // +10: every offset through +9 is already claimed in this file. Two nodes on
+  // one port is not a loud failure — `waitForNode` succeeds against whichever
+  // one is listening, and the pairing code is then printed on the OTHER child's
+  // stdout, so it surfaces as "the node never displayed an approval code". That
+  // is the same signature as the suite-wide flake, which is worth knowing.
+  const port = PORT + 10;
+  const { env, repo } = fixture();
+  register(repo, env);
+  const { execFileSync } = require('node:child_process');
+  const git = (args) => execFileSync('git', args, {
+    cwd: repo, env: { ...process.env, NO_COLOR: '1', ...env }, stdio: 'ignore',
+  });
+
+  // Commit the recorded truth, then let the code move past it.
+  git(['add', '.intent']);
+  git(['commit', '-qm', 'record the project']);
+
+  const child = startServe(port, repo, env);
+  await waitForNode(port);
+  const hostGrant = await pair(port, child);
+  const target = (await listProjects(port, hostGrant))[0];
+  if (!target) return;
+  const grant = await grantFor(port, hostGrant, target.id, ['truth:read']);
+  const read = () => request(port, `/local-truth?projectId=${target.id}`, { headers: projHdr(grant) });
+
+  // Nothing has happened since it was recorded.
+  const fresh = await read();
+  assert.strictEqual(fresh.status, 200);
+  assert.strictEqual(fresh.body.driftCommits, 0, 'a just-recorded project must not report drift');
+
+  // Two commits of real work that never touched .intent/.
+  for (const n of [1, 2]) {
+    fs.writeFileSync(path.join(repo, `feature-${n}.txt`), `work ${n}\n`);
+    git(['add', `feature-${n}.txt`]);
+    git(['commit', `-qm`, `ship feature ${n}`]);
+  }
+
+  const drifted = await read();
+  assert.strictEqual(drifted.status, 200);
+  assert.strictEqual(drifted.body.driftCommits, 2,
+    'the room would show a stale vision as current — drift must be reported, not inferred');
+
+  // It is a number a surface can render, never a command to run: the person is
+  // told what is true, not sent to a terminal to find out.
+  assert.strictEqual(typeof drifted.body.driftCommits, 'number');
+  assert.ok(!/phewsh /.test(JSON.stringify(drifted.body.driftCommits)));
 });

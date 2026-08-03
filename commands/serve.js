@@ -20,6 +20,8 @@ const fs = require('fs');
 const { corsHeaders, isAllowedRequest, requestOrigin } = require('../lib/cors');
 const { createGrantStore, GrantError } = require('../lib/capability-grants');
 const configFile = require('../lib/config-file');
+const { containedPath } = require('../lib/truth-path');
+const { boundedAppend } = require('../lib/bounded-output');
 
 const b = (s) => `\x1b[1m${s}\x1b[0m`;
 const g = (s) => `\x1b[90m${s}\x1b[0m`;
@@ -88,10 +90,22 @@ function detectRuntimes() {
 // ─── Job Queue ─────────────────────────────────────────────────────────────
 
 const { gatherReceipts, recordSessionEvent, recordResultFile, recordRunReceipt, readRunReceipt, listRunReceipts } = require('../lib/receipts-data');
-const { buildRunReceipt, attributeChanges, gitStatusMap } = require('../lib/run-receipt');
+const { buildRunReceipt, observedChanges, gitStatusMap } = require('../lib/run-receipt');
 const { buildClosureProposal, applyClosure, ClosureError } = require('../lib/closure');
-const { buildActionContract } = require('../lib/action-contract');
-const { serveProjects, projectId, findServeProjectById } = require('../lib/projects-index');
+const {
+  buildActionContract,
+  buildClaimContract,
+  assertClaimUnchanged,
+  claimExecutionDigest,
+  captureCheckout,
+  assertCheckoutUnmoved,
+  executableInstructions,
+  executionDigest,
+} = require('../lib/action-contract');
+const { serveProjects, projectId } = require('../lib/projects-index');
+// The same writer `phewsh intent --init` uses. One definition of what project
+// truth is, reached through two doors.
+const { createPPS, writeGuardedViews } = require('../lib/pps');
 
 const jobs = new Map();
 const claimRuns = new Map();
@@ -101,12 +115,24 @@ const claimRuns = new Map();
 // client-supplied proposal let a caller skip the preview entirely and append
 // any line it liked to decisions.md — including a claim that checks passed.
 const closureProposals = new Map(); // proposalId → { proposal, projectId, createdAt }
-const PROPOSAL_TTL_MS = 60 * 60 * 1000;
+const configuredProposalTtl = Number(process.env.PHEWSH_PROPOSAL_TTL_MS);
+const PROPOSAL_TTL_MS = Number.isFinite(configuredProposalTtl) && configuredProposalTtl > 0
+  ? configuredProposalTtl : 60 * 60 * 1000;
 
 // Contracts the ENGINE composed, held by id, for exactly the same reason. A
 // caller reviews one and then names it; it never sends one back.
 const actionContracts = new Map(); // contractId → { contract, projectId, createdAt }
-const CONTRACT_TTL_MS = 30 * 60 * 1000;
+const configuredContractTtl = Number(process.env.PHEWSH_CONTRACT_TTL_MS);
+const CONTRACT_TTL_MS = Number.isFinite(configuredContractTtl) && configuredContractTtl > 0
+  ? configuredContractTtl : 30 * 60 * 1000;
+
+function liveHeldEntry(store, id, ttlMs) {
+  const held = store.get(id);
+  if (!held) return null;
+  if (Date.now() - held.createdAt <= ttlMs) return held;
+  store.delete(id);
+  return null;
+}
 
 function rememberContract(contract, projectId) {
   const contractId = crypto.randomBytes(12).toString('hex');
@@ -117,7 +143,33 @@ function rememberContract(contract, projectId) {
   return { contractId, contract };
 }
 
+/**
+ * Refuse without publishing an internal failure's text.
+ *
+ * Errors the engine AUTHORED carry a `.status` and a message written for a person
+ * to read. Anything else is an internal failure whose text is not ours to hand out:
+ * an independent critic pulled the absolute repository path and this node's PID out
+ * of a raw `fs` ENOENT here, while two sibling endpoints deliberately withhold
+ * absolute paths. The detail still reaches the operator's own terminal, which is
+ * the one place it belongs.
+ */
+function refuseSafely(req, res, error, where) {
+  if (typeof error?.status === 'number') {
+    return json(req, res, { error: error.message }, error.status);
+  }
+  console.log(`  ${yellow('\u2717')} ${where} failed: ${error?.message || error}`);
+  return json(req, res, { error: 'That request could not be completed on this machine.' }, 500);
+}
+
 function rememberProposal(proposal, projectId) {
+  // A proposalId is DERIVED from the receipt, the note and the baseline, so an
+  // identical review produces an identical id. Overwriting the entry threw the
+  // recorded decision away with it, and one extra HTTP call reopened a settled
+  // judgement: reject, preview again, accept, and the declined line went into the
+  // Record with no second human gesture. A decided review stays decided — and
+  // keeps its original createdAt, so re-previewing cannot extend its TTL either.
+  const decided = closureProposals.get(proposal.proposalId);
+  if (decided?.decision) return proposal;
   closureProposals.set(proposal.proposalId, { proposal, projectId, createdAt: Date.now() });
   // Bound the store; a review nobody acted on within the hour is stale anyway.
   for (const [id, entry] of closureProposals) {
@@ -133,6 +185,28 @@ function rememberProposal(proposal, projectId) {
  */
 function registeredProjects() {
   return serveProjects().map((p) => ({ ...p, id: projectId(p.path) }));
+}
+
+/**
+ * The single project-grant use gate.
+ *
+ * A project token binds a root + registered remote, not merely a path-derived
+ * handle. Every endpoint that reads, runs, controls, or records work comes
+ * through here so a repo re-pointed at the same path invalidates the grant
+ * everywhere at once.
+ */
+function requireLiveProject(req, { projectId: wantedId, scope } = {}) {
+  let project = null;
+  const grant = grants.requireProject(projectToken(req), {
+    projectId: wantedId,
+    scope,
+    ...callerOf(req),
+    revalidate: (id) => {
+      project = resolveRunTarget(id, registeredProjects());
+      return project;
+    },
+  });
+  return { grant, project };
 }
 
 function createJob(actionId, runtimeId, packet, project = null) {
@@ -165,6 +239,7 @@ function createJob(actionId, runtimeId, packet, project = null) {
     jobId,
     actionId,
     boundProjectId: project?.id || null,
+    boundProjectRemote: project?.remote || null,
     taskSummary: packet?.objective?.task?.slice(0, 120),
   });
   return jobId;
@@ -188,6 +263,7 @@ function writeRunReceipt(job, runner, treeBefore) {
       jobId: job.jobId,
       projectId: job.project.name,
       boundProjectId: job.project.id,
+      boundProjectRemote: job.project.remote || null,
       runtimeId: job.runtimeId,
       runtimeLabel: runner?.label || job.runtimeId,
       startedAt: job.startedAt || job.createdAt,
@@ -197,14 +273,16 @@ function writeRunReceipt(job, runner, treeBefore) {
       // happens to be? Both are real; conflating them is not.
       boundByCaller: job.project?.boundByCaller === true,
       contract: job.contract || null,
-      // A null tree map means git could not answer; report no attributed
-      // changes rather than inventing them from one half of the observation.
-      changes: treeBefore && treeAfter
-        ? attributeChanges(treeBefore, treeAfter)
-        : { preExisting: [], created: [], modified: [], deleted: [] },
+      // Null when either snapshot is missing, which buildRunReceipt renders as an
+      // explicit unknown. Empty arrays here used to make an unobserved run read
+      // as "no files changed" in Ion and in the Record — the opposite claim.
+      changes: observedChanges(treeBefore, treeAfter, job.project?.path || null),
       output: {
         bytes: Buffer.byteLength(output),
         sha256: output ? crypto.createHash('sha256').update(output).digest('hex') : null,
+        // The node caps what a harness may hold in memory. Say so, or the hash
+        // and byte count present part of the output as all of it.
+        truncated: job.outputTruncated === true,
       },
     });
     recordRunReceipt(receipt);
@@ -213,6 +291,96 @@ function writeRunReceipt(job, runner, treeBefore) {
   } catch {
     return null; // a receipt that cannot be written must not take the run down
   }
+}
+
+// How long a harness gets to stop politely before it is killed outright.
+const configuredCancelGrace = Number(process.env.PHEWSH_CANCEL_GRACE_MS);
+const CANCEL_GRACE_MS = Number.isFinite(configuredCancelGrace) && configuredCancelGrace > 0
+  ? configuredCancelGrace : 5000;
+
+/**
+ * Stop a running harness, and mean it.
+ *
+ * Two failures this replaces. `kill('SIGTERM')` signalled only the DIRECT child,
+ * so anything the harness spawned kept running as an orphan — and agent harnesses
+ * spawn plenty. And there was no escalation, so a process that ignores SIGTERM was
+ * never stopped at all while the API reported the run cancelled.
+ *
+ * The harness is spawned detached, which puts it in its own process group, so a
+ * negative pid signals the whole group. `cancelled` is not written here: only the
+ * `close` handler observes exit, and that is the only honest place to claim it.
+ */
+function stopJobProcess(job) {
+  const child = job.child;
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const pid = child.pid;
+  if (!pid) return;
+
+  const signal = (sig) => {
+    // The group first; fall back to the lone child if it has no group of its own.
+    try { process.kill(-pid, sig); return true; } catch { /* no group */ }
+    try { child.kill(sig); return true; } catch { return false; }
+  };
+
+  signal('SIGTERM');
+  if (job.killTimer) clearTimeout(job.killTimer);
+  job.killTimer = setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null) {
+      job.statusText = 'Cancelling — forcing stop…';
+      signal('SIGKILL');
+    }
+  }, CANCEL_GRACE_MS);
+  // Never hold the node open just to wait out a grace period.
+  if (typeof job.killTimer.unref === 'function') job.killTimer.unref();
+}
+
+/**
+ * The ONE way a job reaches a terminal state.
+ *
+ * Every terminal path has to leave the same three artifacts — a result file, a
+ * session event, and a run receipt — because a person looking for what happened
+ * should never find a job that ended and no evidence that it did. Four paths did
+ * not: an unsupported runtime and an interactive-only one returned bare, a spawn
+ * failure resolved with nothing at all, and a cancelled run left a receipt and a
+ * session event but no result file. Only the ordinary exit was complete.
+ *
+ * `treeBefore` may be null — a run that never started never observed a tree, and
+ * that becomes an honest unknown rather than "nothing changed".
+ */
+function finalizeJob(job, runner, treeBefore, { packet, eventType = 'task_complete' } = {}) {
+  // Exactly once per job. `error` and `close` can both fire for one spawn, and
+  // two finalizations would double-count the run in the evidence a person reads.
+  if (job.finalized) return null;
+  job.finalized = true;
+
+  const success = job.status === 'done';
+  const taskId = packet?.id || job.actionId || job.jobId;
+  const projectId = job.project?.name || 'web';
+  const identity = {
+    boundProjectId: job.project?.id || null,
+    boundProjectRemote: job.project?.remote || null,
+  };
+  try {
+    recordResultFile({
+      // Same identity as the run itself — the enqueue, the working directory,
+      // the cancel, and the outcome all name one project.
+      projectId,
+      ...identity,
+      taskId,
+      result: success ? job.result : job.error,
+      success,
+      agentId: job.runtimeId,
+      executor: 'phewsh-serve',
+      reportedAt: new Date().toISOString(),
+    });
+    recordSessionEvent(job.runtimeId, projectId, eventType, {
+      taskId,
+      ...identity,
+      success,
+      result: String((success ? job.result : job.error) || '').slice(0, 200),
+    });
+  } catch { /* evidence that cannot be written must not take the run down */ }
+  return writeRunReceipt(job, runner, treeBefore);
 }
 
 async function executeJob(jobId) {
@@ -229,6 +397,10 @@ async function executeJob(jobId) {
     job.status = 'error';
     job.error = `Runtime ${runtimeId} not supported for live execution yet`;
     job.statusText = 'Unsupported runtime';
+    // Contract review refuses a route this machine cannot run, so reaching here
+    // means the two tables disagree. That is worth evidence, not a bare return:
+    // the job exists and it ended.
+    finalizeJob(job, null, null, { packet });
     return;
   }
   // `args: null` means we only know how to launch this harness interactively
@@ -240,9 +412,24 @@ async function executeJob(jobId) {
     job.status = 'error';
     job.error = `${runner.label} is interactive-only here — start it yourself with \`phewsh work ${runtimeId}\``;
     job.statusText = 'Interactive-only runtime';
+    finalizeJob(job, runner, null, { packet });
     return;
   }
-  await executeViaHarness(job, packet, runner, job.project?.path || process.cwd());
+  // An unbound job refuses instead of running in the worker's own directory.
+  //
+  // The job's path used to fall back to the worker's own working directory when
+  // it was absent. One `createJob` caller made that unreachable, which is
+  // exactly why it survived review — but unreachable today is one refactor from
+  // reachable tomorrow, and its failure mode is a harness launched wherever the
+  // worker happens to be standing. `test/cwd-authority.test.js` holds it gone.
+  if (!job.project?.path) {
+    job.status = 'error';
+    job.error = 'This job is not bound to a project, so there is nowhere it may run.';
+    job.statusText = 'Unbound job refused';
+    finalizeJob(job, runner, null, { packet });
+    return;
+  }
+  await executeViaHarness(job, packet, runner, job.project.path);
 }
 
 // Some harnesses (Claude Code) stream NDJSON events (--output-format
@@ -278,16 +465,17 @@ function extractStreamResult(stdout) {
 }
 
 async function executeViaHarness(job, packet, runner, cwd) {
+  const executable = executableInstructions(packet);
   // Build a prompt from the dispatch packet
   const prompt = [
-    `# Task: ${packet.objective?.task || 'Execute task'}`,
+    `# Task: ${executable.action || 'Execute task'}`,
     '',
-    packet.objective?.task || '',
+    executable.action || '',
     '',
-    packet.context?.plan ? `## Context\n${packet.context.plan}` : '',
+    executable.context ? `## Context\n${executable.context}` : '',
     '',
-    packet.verification?.criteria?.length
-      ? `## Verify\n${packet.verification.criteria.map(c => `- ${c}`).join('\n')}`
+    executable.criteria.length
+      ? `## Verify\n${executable.criteria.map(c => `- ${c}`).join('\n')}`
       : '',
     '',
     '## Instructions',
@@ -309,6 +497,10 @@ async function executeViaHarness(job, packet, runner, cwd) {
       // The resolved project's directory — never a path the caller sent, and
       // never "wherever the worker happened to be started" once a run is bound.
       cwd,
+      // Its own process group, so a cancel can stop the harness AND whatever it
+      // spawned. Signalling the direct child alone left orphans running in the
+      // person's repository after the run was reported cancelled.
+      detached: true,
     });
     // Keep a handle so an explicit human /cancel can stop this run.
     job.child = child;
@@ -316,17 +508,30 @@ async function executeViaHarness(job, packet, runner, cwd) {
     // Some harnesses (codex exec, gemini) wait for stdin EOF before running.
     child.stdin.end();
 
-    let stdout = '';
-    let stderr = '';
+    // Bounded, because `+=` with no ceiling let a long-streaming or looping
+    // harness grow this node's memory without limit. Truncation is reported, and
+    // the produced byte count stays the real one, so a receipt cannot present a
+    // shortened capture as the whole output.
+    let out = null;
+    let err = null;
+
+    // The unfinished trailing line, carried between chunks. Re-splitting the WHOLE
+    // accumulated buffer on every chunk was the other half of an O(n²) cost that
+    // starved the event loop — and /cancel runs on that same loop.
+    let tail = '';
+    const MAX_TAIL = 64 * 1024;
 
     child.stdout.on('data', (data) => {
-      stdout += data.toString();
+      const text = data.toString();
+      out = boundedAppend(out, text);
       // Live status: a readable phase for stream-json harnesses, else the last
       // plain-text line. Never surface raw JSONL event noise to the web. Use the
       // last COMPLETE line so a mid-stream chunk boundary can't leak a fragment.
-      const parts = stdout.split('\n');
-      const complete = parts.slice(0, stdout.endsWith('\n') ? parts.length : -1)
-        .map(l => l.trim()).filter(Boolean);
+      const parts = (tail + text).split('\n');
+      // Whatever follows the final newline is not a complete line yet.
+      tail = parts.pop() ?? '';
+      if (tail.length > MAX_TAIL) tail = tail.slice(-MAX_TAIL);
+      const complete = parts.map((l) => l.trim()).filter(Boolean);
       if (complete.length > 0) {
         const lastLine = complete[complete.length - 1];
         const phase = streamPhase(parseStreamEvent(lastLine));
@@ -335,19 +540,27 @@ async function executeViaHarness(job, packet, runner, cwd) {
     });
 
     child.stderr.on('data', (data) => {
-      stderr += data.toString();
+      err = boundedAppend(err, data.toString());
     });
 
     child.on('close', (code) => {
+      const stdout = out ? out.text : '';
+      const stderr = err ? err.text : '';
+      job.outputTruncated = Boolean(out && out.truncated);
+      job.outputBytes = out ? out.bytes : 0;
       // A human cancel already set the terminal state — record it and stop,
       // never relabel a cancelled run as a failure.
-      if (job.status === 'cancelled') {
-        recordSessionEvent(job.runtimeId, job.project?.name || 'web', 'task_cancelled', {
-          taskId: packet?.id || job.actionId || job.jobId,
-          boundProjectId: job.project?.id || null,
-        });
+      // Exit is finally observed, so a requested cancel becomes a fact now — and
+      // only now. `cancelling` is not terminal, which is the whole point.
+      if (job.status === 'cancelling' || job.status === 'cancelled') {
+        if (job.killTimer) { clearTimeout(job.killTimer); job.killTimer = null; }
+        job.status = 'cancelled';
+        job.statusText = 'Cancelled';
         console.log(`  ${yellow('■')} Job ${job.jobId.slice(0, 8)} cancelled by user`);
-        writeRunReceipt(job, runner, treeBefore);
+        // A cancelled run left the same three artifacts as any other terminal
+        // state. It previously skipped the result file, so a cancelled run was
+        // the one outcome with no result to point a person at.
+        finalizeJob(job, runner, treeBefore, { packet, eventType: 'task_cancelled' });
         resolve();
         return;
       }
@@ -371,26 +584,7 @@ async function executeViaHarness(job, packet, runner, cwd) {
         console.log(`  ${yellow('✗')} Job ${job.jobId.slice(0, 8)} failed: ${job.error.slice(0, 100)}`);
       }
       // Leave a receipt: result file + session event, same shape as MCP path.
-      const success = job.status === 'done';
-      recordResultFile({
-        // Same identity as the run itself — the enqueue, the working
-        // directory, the cancel, and the outcome all name one project.
-        projectId: job.project?.name || 'web',
-        boundProjectId: job.project?.id || null,
-        taskId: packet?.id || job.actionId || job.jobId,
-        result: success ? job.result : job.error,
-        success,
-        agentId: job.runtimeId,
-        executor: 'phewsh-serve',
-        reportedAt: new Date().toISOString(),
-      });
-      recordSessionEvent(job.runtimeId, job.project?.name || 'web', 'task_complete', {
-        taskId: packet?.id || job.actionId || job.jobId,
-        boundProjectId: job.project?.id || null,
-        success,
-        result: (success ? job.result : job.error || '').slice(0, 200),
-      });
-      writeRunReceipt(job, runner, treeBefore);
+      finalizeJob(job, runner, treeBefore, { packet });
       resolve();
     });
 
@@ -399,6 +593,13 @@ async function executeViaHarness(job, packet, runner, cwd) {
       job.error = err.message;
       job.statusText = 'Failed to start';
       console.log(`  ${yellow('✗')} Job ${job.jobId.slice(0, 8)} error: ${err.message}`);
+      // A harness that never started is still a job that ended. This resolved
+      // with no result file, no session event, and no receipt, so the run simply
+      // vanished from the evidence.
+      //
+      // `close` may still fire after `error` for the same spawn, which is why
+      // finalizeJob is guarded to run exactly once per job.
+      finalizeJob(job, runner, treeBefore, { packet });
       resolve();
     });
   });
@@ -407,22 +608,38 @@ async function executeViaHarness(job, packet, runner, cwd) {
 // The browser click starts the existing task-claim lifecycle in the repo that
 // was resolved from a cloud id + explicit local registry entry + live origin.
 // No task prompt or directory from the browser is ever used as an exec target.
-function startLocalClaim(claim) {
+const CLAIM_BIN = path.join(__dirname, '..', 'bin', 'phewsh.js');
+
+/** Exactly what will be spawned — digested at review, re-digested before spend. */
+const claimArgv = (claim) => claimCommand(CLAIM_BIN, claim);
+
+function startLocalClaim(claim, contract, contractId) {
   const key = `${claim.projectId}:${claim.taskId}`;
   if (claimRuns.has(key)) throw new LocalClaimError('This task is already being claimed on this machine.', 409);
 
   const claimId = crypto.randomUUID();
-  const binPath = path.join(__dirname, '..', 'bin', 'phewsh.js');
-  const child = spawn(process.execPath, claimCommand(binPath, claim), {
+  const child = spawn(process.execPath, claimArgv(claim), {
     cwd: claim.project.path,
     stdio: 'inherit',
     env: { ...process.env },
     windowsHide: true,
   });
   claimRuns.set(key, { claimId, child });
-  recordSessionEvent(claim.runtimeId || 'default-route', 'ion', 'local_claim_requested', {
+  // Filed under the project NAME — the receipt layer's grouping key, the same
+  // convention `createJob` follows — with the stable ids alongside. This event
+  // used to carry only claimId + taskId under the literal "ion", which made the
+  // one route that starts a harness the one whose evidence named no repository.
+  recordSessionEvent(claim.runtimeId || 'default-route', claim.project.name, 'local_claim_requested', {
     claimId,
     taskId: claim.taskId,
+    contractId,
+    boundProjectId: projectId(claim.project.path),
+    boundProjectRemote: claim.project.remote || null,
+    boundCloudProjectId: claim.projectId,
+    boundBranch: contract.boundBranch,
+    boundHead: contract.boundHead,
+    boundWorkerId: contract.boundWorkerId,
+    runtimeId: claim.runtimeId || null,
   });
   const finish = (message) => {
     claimRuns.delete(key);
@@ -705,24 +922,38 @@ function main() {
       // origin could read Project, Next, and Record out of any registered repo.
       let hit;
       try {
-        grants.requireProject(projectToken(req), {
-          projectId: wanted, scope: 'truth:read', ...callerOf(req),
-          revalidate: (id) => findServeProjectById(id),
-        });
-        hit = findServeProjectById(wanted);
+        ({ project: hit } = requireLiveProject(req, {
+          projectId: wanted,
+          scope: 'truth:read',
+        }));
       } catch (error) {
         return refuse(req, res, error);
       }
       if (!hit) return json(req, res, { error: 'No registered project with that id on this machine.' }, 404);
-      const intentDir = path.join(hit.path, '.intent');
+      // The grant names a repository, so truth must resolve inside it. A
+      // symlinked `.intent` otherwise turned `truth:read` for one project into a
+      // reader for wherever the link pointed.
+      let intentDir;
+      try {
+        intentDir = containedPath(hit.path, '.intent');
+      } catch (error) {
+        return json(req, res, { error: error.message }, error.status || 403);
+      }
       if (!fs.existsSync(intentDir)) {
         return json(req, res, {
           projectId: wanted, name: hit.name, intentPresent: false,
-          reason: 'This repo is registered but has no .intent/ — run `phewsh intent --init` inside it.',
+          // Said as a state, not as an instruction to go type something. The
+          // surface can offer to ground it with POST /ground; a person should
+          // not have to leave the room to answer two questions about their own
+          // project.
+          reason: 'This project has no recorded truth yet.',
+          groundable: true,
         });
       }
+      // Each file re-checked too: a contained `.intent` can still hold a file
+      // that is itself a link out.
       const read = (file) => {
-        try { return fs.readFileSync(path.join(intentDir, file), 'utf-8'); } catch { return null; }
+        try { return fs.readFileSync(containedPath(hit.path, '.intent', file), 'utf-8'); } catch { return null; }
       };
       // YAML frontmatter is file metadata, not what the project is trying to
       // do. Stripping it here means every surface renders Project the same way
@@ -762,6 +993,19 @@ function main() {
         vision: prose(read('vision.md')),
         next,
         record: { total: entries.length, recent: entries.slice(-10).reverse() },
+        // How far the recorded truth has fallen behind the code.
+        //
+        // `phewsh status` has always measured this and no other surface ever
+        // received it, so a room could show a project's north star in full
+        // confidence while the work had moved a long way past it. That is the
+        // accountability half of the promise: noticing when the record stops
+        // keeping up. It is a plain number a surface renders as a risk — never
+        // a command to go and run. 0 covers "in step", "not a repo", and
+        // "`.intent/` has uncommitted edits", which are all "nothing to warn
+        // about right now".
+        driftCommits: (() => {
+          try { return require('../lib/selfheal').commitsSinceIntent(hit.path); } catch { return 0; }
+        })(),
         source: '.intent/ on this device',
         readAt: new Date().toISOString(),
       });
@@ -775,7 +1019,7 @@ function main() {
       // opposite of what its sibling /receipts/run does five lines below.
       let holder;
       try {
-        holder = grants.requireProject(projectToken(req), { scope: 'truth:read', ...callerOf(req) });
+        ({ grant: holder } = requireLiveProject(req, { scope: 'truth:read' }));
       } catch (error) {
         return refuse(req, res, error);
       }
@@ -787,6 +1031,14 @@ function main() {
       if (!receipt.boundProjectId || receipt.boundProjectId !== holder.projectId) {
         return json(req, res, { error: 'That receipt belongs to a different project.' }, 403);
       }
+      // New receipts bind the normalized remote as well as the path-derived
+      // local handle. Legacy receipts remain explicitly readable by id, but
+      // are labelled by the reader and cannot enter current-project lists or
+      // closure because they cannot prove which repo occupied that path.
+      if (receipt.boundProjectRemote
+        && receipt.boundProjectRemote !== holder.remote) {
+        return json(req, res, { error: 'That receipt belongs to a different project identity.' }, 403);
+      }
       return json(req, res, receipt);
     }
 
@@ -797,16 +1049,91 @@ function main() {
       try {
         // The grant is checked BEFORE resolution, so an ungranted caller cannot
         // use this endpoint's error codes to probe which ids are registered.
-        grants.requireProject(projectToken(req), {
-          projectId: wanted, scope: 'truth:read', ...callerOf(req),
-        });
-        target = resolveRunTarget(wanted, registeredProjects());
+        ({ project: target } = requireLiveProject(req, {
+          projectId: wanted,
+          scope: 'truth:read',
+        }));
       } catch (error) {
         return refuse(req, res, error);
       }
       // Filtered by the STABLE id, not the display name: two registered repos
       // can share a basename, and receipts must never cross between them.
-      return json(req, res, { receipts: listRunReceipts({ boundProjectId: target.id }) });
+      return json(req, res, {
+        receipts: listRunReceipts({
+          boundProjectId: target.id,
+          boundProjectRemote: target.remote,
+        }),
+      });
+    }
+
+    // Ground a project — the second promise, from wherever the person already is.
+    //
+    // Ion could show a registered repo with no `.intent/` and had exactly one
+    // thing to say about it: "run `phewsh intent --init` in that repository."
+    // That is a copied terminal instruction standing in the middle of the
+    // product's own Level 2, and it is the most common first-run dead end there
+    // is. The engine simply had no endpoint for it.
+    //
+    // This is NOT a second definition of project truth. `phewsh intent --init`
+    // asks the same two questions and hands the same two answers to the same
+    // writer; both doors call `createPPS` + `writeGuardedViews`, which own what
+    // `.intent/` is and carry the truth guard. Implement once, expose everywhere.
+    if (url.pathname === '/ground' && req.method === 'POST') {
+      try {
+        const body = await parseBody(req);
+        // Writing project truth needs a writing grant. `truth:read` buys the
+        // right to LOOK at a project and must never buy the right to author it.
+        const { project: target } = requireLiveProject(req, {
+          projectId: body?.projectId,
+          scope: 'record:write',
+        });
+        // Resolved inside the granted repository, same containment rule
+        // `/local-truth` uses: a symlinked `.intent` must not turn a grant for
+        // one project into a writer for wherever the link points.
+        const intentDir = containedPath(target.path, '.intent');
+
+        // Already grounded is a conflict, not an overwrite. A person's recorded
+        // truth is the one thing this endpoint must never replace.
+        const grounded = fs.existsSync(path.join(intentDir, 'vision.md'))
+          && fs.existsSync(path.join(intentDir, 'plan.md'));
+        if (grounded) {
+          return json(req, res, {
+            error: 'This project already has recorded truth. Change it in the project rather than grounding it again.',
+          }, 409);
+        }
+
+        const what = String(body?.what ?? '').trim().slice(0, 2000);
+        const goal = String(body?.goal ?? '').trim().slice(0, 2000);
+        const pps = createPPS({
+          entity: target.name,
+          archetype: 'product',
+          raw: [what, goal].filter(Boolean).join(' '),
+          intent: {
+            goal: what,
+            success_criteria: goal ? [goal] : [],
+            constraints: [], inputs: [], outputs: [],
+            // The same starter tasks `phewsh intent --init` writes. A grounded
+            // project should never open onto an empty Next.
+            tasks: [
+              { text: 'Refine the vision — complete vision.md', type: 'do' },
+              { text: 'Define Phase 1 — what is the smallest thing to ship?', type: 'do' },
+              { text: 'Identify the first blocker', type: 'do' },
+            ],
+          },
+        });
+        // The writer's own guard: a partial `.intent/` holding a hand-authored
+        // file slips past the check above, and that file is not ours to replace.
+        const { written, preserved } = writeGuardedViews(intentDir, pps);
+        console.log(`  ${cyan('→')} Grounded ${target.name}${preserved.length ? ` (kept ${preserved.join(', ')})` : ''}`);
+        return json(req, res, {
+          project: { id: target.id, name: target.name },
+          written,
+          preserved,
+        });
+      } catch (error) {
+        if (error instanceof GrantError) return refuse(req, res, error);
+        return refuseSafely(req, res, error, url.pathname);
+      }
     }
 
     // The authority contract for a proposed run.
@@ -818,21 +1145,26 @@ function main() {
     if (url.pathname === '/contract' && req.method === 'POST') {
       try {
         const body = await parseBody(req);
-        grants.requireProject(projectToken(req), {
-          projectId: body?.projectId, scope: 'work:run', ...callerOf(req),
-          revalidate: (id) => findServeProjectById(id),
+        const { project: target } = requireLiveProject(req, {
+          projectId: body?.projectId,
+          scope: 'work:run',
         });
-        const target = resolveRunTarget(body?.projectId, registeredProjects());
         const runtime = detectRuntimes().find((r) => r.id === body?.runtimeId);
+        const packet = body?.packet && typeof body.packet === 'object'
+          ? body.packet
+          : { objective: { task: body?.task } };
         const contract = buildActionContract({
-          task: body?.task,
+          packet,
           runtime,
           project: { id: target.id, name: target.name, remote: target.remote || null },
+          // Which code the reviewer is actually looking at, read from the
+          // resolved project's own directory — never from the request.
+          checkout: captureCheckout(target.path),
         });
         return json(req, res, rememberContract(contract, target.id));
       } catch (error) {
         if (error instanceof GrantError) return refuse(req, res, error);
-        return json(req, res, { error: error.message }, error.status || 400);
+        return refuseSafely(req, res, error, url.pathname);
       }
     }
 
@@ -840,11 +1172,10 @@ function main() {
     if (url.pathname === '/closure/preview' && req.method === 'POST') {
       try {
         const body = await parseBody(req);
-        grants.requireProject(projectToken(req), {
-          projectId: body?.projectId, scope: 'record:write', ...callerOf(req),
-          revalidate: (id) => findServeProjectById(id),
+        const { project: target } = requireLiveProject(req, {
+          projectId: body?.projectId,
+          scope: 'record:write',
         });
-        const target = resolveRunTarget(body.projectId, registeredProjects());
         const receipt = readRunReceipt(String(body.receiptId || '').trim());
         if (!receipt) return json(req, res, { error: 'No receipt with that id on this machine.' }, 404);
         // The receipt must belong to the project being closed. Otherwise one
@@ -852,14 +1183,20 @@ function main() {
         if (receipt.boundProjectId !== target.id) {
           return json(req, res, { error: 'That receipt belongs to a different project.' }, 409);
         }
+        if (!receipt.boundProjectRemote || receipt.boundProjectRemote !== target.remote) {
+          return json(req, res, {
+            error: 'That receipt lacks the current project identity binding and cannot enter its Record.',
+          }, 409);
+        }
         return json(req, res, rememberProposal(buildClosureProposal({
           receipt,
           note: body.note,
-          intentDir: path.join(target.path, '.intent'),
+          intentDir: containedPath(target.path, '.intent'),
+          projectRoot: target.path,
           markNextDone: body.markNextDone === true,
         }), target.id));
       } catch (error) {
-        return json(req, res, { error: error.message }, error.status || 400);
+        return refuseSafely(req, res, error, url.pathname);
       }
     }
 
@@ -867,33 +1204,62 @@ function main() {
     if (url.pathname === '/closure/decide' && req.method === 'POST') {
       try {
         const body = await parseBody(req);
-        grants.requireProject(projectToken(req), {
-          projectId: body?.projectId, scope: 'record:write', ...callerOf(req),
-          revalidate: (id) => findServeProjectById(id),
+        const { project: target } = requireLiveProject(req, {
+          projectId: body?.projectId,
+          scope: 'record:write',
         });
-        const target = resolveRunTarget(body.projectId, registeredProjects());
         // The caller names a proposal; it never supplies one. A client-supplied
         // proposal could append any line it liked to the Record, including a
         // claim that checks passed.
-        const held = closureProposals.get(String(body.proposalId || '').trim());
+        const held = liveHeldEntry(
+          closureProposals,
+          String(body.proposalId || '').trim(),
+          PROPOSAL_TTL_MS,
+        );
         if (!held) {
           return json(req, res, {
-            error: 'That review is not held by this node — review it again before deciding.',
+            error: 'That review is missing or expired — review it again before deciding.',
           }, 409);
         }
         const proposal = held.proposal;
-        if (held.projectId !== target.id || proposal.boundProjectId !== target.id) {
+        if (held.projectId !== target.id
+          || proposal.boundProjectId !== target.id
+          || proposal.boundProjectRemote !== target.remote) {
           return json(req, res, { error: 'That proposal belongs to a different project.' }, 409);
         }
+        // The FIRST decision is the answer.
+        //
+        // Rejection returned an outcome and recorded nothing, so the proposal
+        // stayed decidable: a reject followed by an accept wrote the very Record
+        // line the person had just declined. The reverse answered "reject,
+        // applied: false" for work already in project truth. Neither is a retry
+        // — changing the answer is a new judgement, and it needs a new review of
+        // the receipt against the files as they are now.
+        //
+        // An IDENTICAL decision is still safe to replay: acceptance recognises
+        // its own Record line and rejection writes nothing either way, so a lost
+        // response can always be retried.
+        const asked = String(body?.decision || '').trim();
+        if (held.decision && (asked === 'accept' || asked === 'reject') && asked !== held.decision) {
+          return json(req, res, {
+            error: `This review was already ${held.decision}ed, and a closure decision is final. `
+              + 'Review the receipt again to make a new decision against the current files.',
+          }, 409);
+        }
         const outcome = applyClosure({
-          proposal, decision: body.decision, intentDir: path.join(target.path, '.intent'),
+          proposal, decision: body.decision,
+          intentDir: containedPath(target.path, '.intent'), projectRoot: target.path,
         });
+        // Recorded only once the decision actually succeeded — a refusal must not
+        // consume the person's one answer.
+        held.decision = outcome.decision;
         // The decision is its own event. Evidence and judgement stay separate
         // artifacts: the receipt is never edited by a human accepting it.
         recordSessionEvent('human', target.name, 'closure_decided', {
           receiptId: proposal.receiptId,
           proposalId: proposal.proposalId,
           boundProjectId: target.id,
+          boundProjectRemote: target.remote,
           decision: outcome.decision,
           applied: outcome.applied,
           alreadyApplied: outcome.alreadyApplied === true,
@@ -903,9 +1269,9 @@ function main() {
       } catch (error) {
         if (error instanceof GrantError) return refuse(req, res, error);
         if (error instanceof ClosureError || error instanceof LocalClaimError) {
-          return json(req, res, { error: error.message }, error.status || 400);
+          return refuseSafely(req, res, error, url.pathname);
         }
-        return json(req, res, { error: error.message }, 400);
+        return refuseSafely(req, res, error, url.pathname);
       }
     }
 
@@ -913,47 +1279,134 @@ function main() {
     // own loopback worker; the worker independently resolves the cloud project
     // to a deliberately registered repo and re-verifies its live origin before
     // delegating to the existing isolated branch/PR task path.
+    //
+    // Both doors below resolve the claim the same way, so the rule is written
+    // once: authorize, resolve the cloud id to exactly one registered repo, and
+    // prove the grant names THAT repo. Two copies of this would drift, and the
+    // permissive copy is the one that would end up answering.
+    const resolveGrantedClaim = (body) => {
+      // Execution scope first, so an ungranted caller learns nothing.
+      const { grant, project: grantedProject } = requireLiveProject(req, { scope: 'work:run' });
+      const installed = listHarnesses()
+        .filter((harness) => harness.installed && harness.headless)
+        .map((harness) => harness.id);
+      const claim = resolveLocalClaim(body, serveProjects(), installed);
+
+      // The grant must name the repository this claim actually resolved to.
+      //
+      // An independent critic proved the hole: the scope check above passed
+      // no projectId, so it bound to nothing, while `body.projectId` is a
+      // CLOUD uuid resolved against a different table entirely. A grant for
+      // repo A therefore spawned a harness in repo B — the one endpoint here
+      // that starts a process was the one that did not bind.
+      const claimedProjectId = projectId(claim.project.path);
+      if (grant.projectId !== claimedProjectId) {
+        throw new LocalClaimError('That grant belongs to a different project than this task is linked to.', 403);
+      }
+      // And the repo must still be what it was when the grant was issued.
+      if (!grantedProject || grantedProject.path !== claim.project.path) {
+        throw new LocalClaimError('That project moved or is no longer registered. Select it again.', 409);
+      }
+      return {
+        grant,
+        claim,
+        // The resolved local project, in the shape a contract binds to.
+        project: {
+          id: claimedProjectId,
+          name: claim.project.name,
+          path: claim.project.path,
+          remote: claim.project.remote || null,
+        },
+        workerId: grants.nodeInstanceId,
+        // Same grant, proven without restating it. A contract is rendered to a
+        // browser and filed as evidence; a token belongs in neither.
+        grantFingerprint: crypto.createHash('sha256').update(String(grant.token)).digest('hex').slice(0, 32),
+      };
+    };
+
+    // Review a claim BEFORE it can create a branch, a worktree, or a process.
+    //
+    // The engine composes this and holds it by id, exactly as `/contract` does
+    // for a dispatch. The caller reviews it and later names it; it never sends
+    // one back.
+    if (url.pathname === '/claim/contract' && req.method === 'POST') {
+      try {
+        const body = await parseBody(req);
+        const { claim, project, workerId, grantFingerprint } = resolveGrantedClaim(body);
+        const contract = buildClaimContract({
+          claim,
+          project,
+          // Which code the reviewer is actually looking at, read from the
+          // resolved project's own directory — never from the request.
+          checkout: captureCheckout(project.path),
+          workerId,
+          grantFingerprint,
+          argv: claimArgv(claim),
+        });
+        return json(req, res, rememberContract(contract, project.id));
+      } catch (error) {
+        if (error instanceof GrantError) return refuse(req, res, error);
+        return refuseSafely(req, res, error, url.pathname);
+      }
+    }
+
     if (url.pathname === '/claim' && req.method === 'POST') {
       try {
         const body = await parseBody(req);
-        // Execution scope first, so an ungranted caller learns nothing.
-        const grant = grants.requireProject(projectToken(req), {
-          scope: 'work:run', ...callerOf(req),
-        });
-        const installed = listHarnesses()
-          .filter((harness) => harness.installed && harness.headless)
-          .map((harness) => harness.id);
-        const claim = resolveLocalClaim(body, serveProjects(), installed);
-
-        // The grant must name the repository this claim actually resolved to.
-        //
-        // An independent critic proved the hole: the scope check above passed
-        // no projectId, so it bound to nothing, while `body.projectId` is a
-        // CLOUD uuid resolved against a different table entirely. A grant for
-        // repo A therefore spawned a harness in repo B — the one endpoint here
-        // that starts a process was the one that did not bind.
-        const claimedProjectId = projectId(claim.project.path);
-        if (grant.projectId !== claimedProjectId) {
+        // A caller-supplied contract is refused outright rather than ignored:
+        // silently dropping it would let a surface believe its claims were
+        // recorded, and accepting it would let a surface write its own claims
+        // into evidence.
+        if (body?.contract !== undefined) {
           return json(req, res, {
-            error: 'That grant belongs to a different project than this task is linked to.',
-          }, 403);
+            error: 'A contract cannot be supplied. Review one with POST /claim/contract and send its contractId.',
+          }, 400);
         }
-        // And the repo must still be what it was when the grant was issued.
-        const live = findServeProjectById(claimedProjectId);
-        if (!live || live.path !== grant.root) {
+        const { claim, project, workerId, grantFingerprint } = resolveGrantedClaim(body);
+
+        // Shape validation AFTER authorization and resolution, so this endpoint
+        // never becomes an oracle for what it expects.
+        const contractId = String(body?.contractId || '').trim();
+        if (!contractId) {
           return json(req, res, {
-            error: 'That project moved or is no longer registered. Select it again.',
+            error: 'A reviewed contractId is required. Review this run with POST /claim/contract first.',
+          }, 400);
+        }
+        const held = liveHeldEntry(actionContracts, contractId, CONTRACT_TTL_MS);
+        if (!held || held.projectId !== project.id) {
+          return json(req, res, {
+            error: 'That contract is missing, expired, or already used — review it again before running.',
           }, 409);
         }
+        // Everything the reviewer was shown, still true — project, remote, cloud
+        // project, task, route, worker, grant, and finally the commit baseline.
+        // This is the LAST check before the contract is spent, and nothing
+        // between here and `spawn()` awaits, so it holds at the moment the
+        // harness starts rather than merely at some earlier point.
+        try {
+          assertClaimUnchanged(held.contract, { claim, project, workerId, grantFingerprint, argv: claimArgv(claim) });
+        } catch (error) {
+          // Spend it on the refusal too. A stale approval left in the store is
+          // one a caller can retry until the tree happens to line up again.
+          actionContracts.delete(contractId);
+          return json(req, res, { error: error.message }, error.status || 409);
+        }
+        // One review authorizes one run. Deleted before the spawn so two
+        // requests cannot spend it twice.
+        actionContracts.delete(contractId);
 
-        const claimId = startLocalClaim(claim);
+        const claimId = startLocalClaim(claim, held.contract, contractId);
         // Not "human-approved": the only human gesture was the pairing. Saying
         // otherwise misleads the operator watching this terminal.
         console.log(`  ${cyan('→')} Ion claim ${claim.taskId.slice(0, 8)} in ${claim.project.name}`);
-        return json(req, res, { claimId, status: 'accepted' }, 202);
+        return json(req, res, {
+          claimId,
+          status: 'accepted',
+          project: { id: project.id, name: project.name },
+        }, 202);
       } catch (error) {
         if (error instanceof GrantError) return refuse(req, res, error);
-        return json(req, res, { error: error.message }, error.status || 400);
+        return refuseSafely(req, res, error, url.pathname);
       }
     }
 
@@ -978,7 +1431,7 @@ function main() {
         // turn this endpoint into an oracle for what it expects.
         let grant;
         try {
-          grant = grants.requireProject(projectToken(req), { scope: 'work:run', ...callerOf(req) });
+          ({ grant } = requireLiveProject(req, { scope: 'work:run' }));
         } catch (error) {
           return refuse(req, res, error);
         }
@@ -993,24 +1446,17 @@ function main() {
             error: 'A projectId is required. Select the project you want this to run in — there is no default.',
           }, 400);
         }
+        let target;
         try {
           // Re-checked against the project actually named, with live identity.
-          grant = grants.requireProject(projectToken(req), {
-            projectId: String(body.projectId).trim(), scope: 'work:run', ...callerOf(req),
-            revalidate: (id) => findServeProjectById(id),
-          });
+          ({ grant, project: target } = requireLiveProject(req, {
+            projectId: String(body.projectId).trim(),
+            scope: 'work:run',
+          }));
         } catch (error) {
           return refuse(req, res, error);
         }
-        const target = resolveRunTarget(body.projectId, registeredProjects());
 
-        const jobId = createJob(actionId, runtimeId, packet, {
-          id: target.id, name: target.name, path: target.path, remote: target.remote || null,
-          boundByCaller: true,
-        });
-        // The job remembers which grant started it, so status and cancel belong
-        // to that session rather than to anyone who learns the job id.
-        jobs.get(jobId).grantToken = grant.token;
         // The reviewed contract, taken from what the ENGINE composed and held.
         // A caller-supplied contract is refused outright rather than ignored:
         // silently dropping it would let a surface believe its claims were
@@ -1021,30 +1467,58 @@ function main() {
             error: 'A contract cannot be supplied. Review one with POST /contract and send its contractId.',
           }, 400);
         }
-        if (body.contractId !== undefined) {
-          const held = actionContracts.get(String(body.contractId).trim());
-          if (!held) {
-            return json(req, res, {
-              error: 'That contract is not held by this node — review it again before running.',
-            }, 409);
-          }
-          if (held.projectId !== target.id || held.contract.boundProjectId !== target.id) {
-            return json(req, res, { error: 'That contract belongs to a different project.' }, 409);
-          }
-          if (held.contract.runtimeId !== runtimeId) {
-            return json(req, res, { error: 'That contract was reviewed for a different route.' }, 409);
-          }
-          // ...and for THIS task. The engine composes the words, but a caller
-          // could still attach a contract reviewed for "fix a typo" to a packet
-          // that says "delete every file" — the same forgery with better
-          // provenance, since the receipt then attests the wrong sentence.
-          if (String(held.contract.action) !== String(packet?.objective?.task || '').trim()) {
-            return json(req, res, {
-              error: 'That contract was reviewed for a different task. Review this one before running it.',
-            }, 409);
-          }
-          jobs.get(jobId).contract = held.contract;
+        const contractId = String(body.contractId || '').trim();
+        if (!contractId) {
+          return json(req, res, {
+            error: 'A reviewed contractId is required. Review this run with POST /contract first.',
+          }, 400);
         }
+        const held = liveHeldEntry(actionContracts, contractId, CONTRACT_TTL_MS);
+        if (!held) {
+          return json(req, res, {
+            error: 'That contract is missing, expired, or already used — review it again before running.',
+          }, 409);
+        }
+        if (held.projectId !== target.id
+          || held.contract.boundProjectId !== target.id
+          || held.contract.boundProjectRemote !== target.remote) {
+          return json(req, res, { error: 'That contract belongs to a different project.' }, 409);
+        }
+        if (held.contract.runtimeId !== runtimeId) {
+          return json(req, res, { error: 'That contract was reviewed for a different route.' }, 409);
+        }
+        // ...and for THIS task. The engine composes the words, but a caller
+        // could still attach a contract reviewed for "fix a typo" to a packet
+        // that says "delete every file" — the same forgery with better
+        // provenance, since the receipt then attests the wrong sentence.
+        if (held.contract.executionDigest !== executionDigest(packet)) {
+          return json(req, res, {
+            error: 'That contract was reviewed for different executable instructions. Review this run again.',
+          }, 409);
+        }
+        // ...and against the code that was there when it was reviewed. This is
+        // the LAST statement before the contract is spent, and nothing between
+        // here and `spawn()` awaits, so "still the same checkout" is true at the
+        // moment the harness starts rather than merely at some earlier point.
+        try {
+          assertCheckoutUnmoved(held.contract, target.path);
+        } catch (error) {
+          // Spend it on the refusal too. A stale approval left in the store is
+          // one a caller can retry until the tree happens to line up again.
+          actionContracts.delete(contractId);
+          return json(req, res, { error: error.message }, error.status || 409);
+        }
+        // One review authorizes one run. Delete immediately before the
+        // synchronous job creation so two requests cannot spend it twice.
+        actionContracts.delete(contractId);
+        const jobId = createJob(actionId, runtimeId, packet, {
+          id: target.id, name: target.name, path: target.path, remote: target.remote || null,
+          boundByCaller: true,
+        });
+        // The job remembers which grant started it, so status and cancel belong
+        // to that session rather than to anyone who learns the job id.
+        jobs.get(jobId).grantToken = grant.token;
+        jobs.get(jobId).contract = held.contract;
         console.log(`  ${cyan('→')} Dispatched job ${jobId.slice(0, 8)} for ${runtimeId}${target ? ` in ${target.name}` : ''}: ${packet.objective?.task?.slice(0, 60) || 'task'}`);
 
         // Start execution in background. The catch is the last line of defence:
@@ -1084,7 +1558,7 @@ function main() {
         // an ungranted caller which job ids exist.
         let grant;
         try {
-          grant = grants.requireProject(projectToken(req), { scope: 'work:control', ...callerOf(req) });
+          ({ grant } = requireLiveProject(req, { scope: 'work:control' }));
         } catch (error) {
           return refuse(req, res, error);
         }
@@ -1099,11 +1573,24 @@ function main() {
           return json(req, res, { error: 'That job belongs to a different project.' }, 403);
         }
         if (job.status === 'queued' || job.status === 'executing') {
-          job.status = 'cancelled';
-          job.statusText = 'Cancelled';
+          // `cancelling`, not `cancelled`. This used to jump straight to a
+          // TERMINAL state the instant it was asked, so the API reported the run
+          // was over while the harness was still executing and still writing into
+          // the person's repository. A harness that ignores SIGTERM made that
+          // claim permanently false.
+          job.status = 'cancelling';
+          job.statusText = 'Cancelling…';
+          job.cancelRequested = true;
           job.error = 'Run cancelled by user.';
-          if (job.child) { try { job.child.kill('SIGTERM'); } catch { /* already gone */ } }
           console.log(`  ${yellow('■')} Cancel requested for job ${job.jobId.slice(0, 8)}`);
+          if (job.child) stopJobProcess(job);
+          else {
+            // Queued and never spawned: nothing to wait for, so exit is already
+            // observed and this is genuinely terminal.
+            job.status = 'cancelled';
+            job.statusText = 'Cancelled';
+            finalizeJob(job, RUNNERS[job.runtimeId] || null, null, { packet: job.packet, eventType: 'task_cancelled' });
+          }
         }
         return json(req, res, { jobId: job.jobId, status: job.status });
       } catch (err) {
@@ -1198,15 +1685,15 @@ function main() {
         // An ungranted caller must not be able to tell "no such job" from
         // "not yours" — that difference is a job-id oracle.
         try {
-          grants.requireProject(projectToken(req), { ...callerOf(req) });
+          requireLiveProject(req);
         } catch (error) {
           return refuse(req, res, error);
         }
         return json(req, res, { error: 'Job not found' }, 404);
       }
       try {
-        const grant = grants.requireProject(projectToken(req), {
-          projectId: job.project?.id, ...callerOf(req),
+        const { grant } = requireLiveProject(req, {
+          projectId: job.project?.id,
         });
         if (job.grantToken && grant.token !== job.grantToken) {
           return json(req, res, { error: 'That job belongs to a different session.' }, 403);

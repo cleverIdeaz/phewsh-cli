@@ -51,6 +51,7 @@ import {
 } from "./lib/handlers.js";
 import * as runtimes from "./lib/runtime-registry.js";
 import * as queue from "./lib/dispatch-queue.js";
+import { resolveExactProject, defaultStartProjectId, McpProjectError } from "./lib/resolve-project.js";
 
 // Version comes from the phewsh package this server ships inside — never hardcode it.
 const PKG_VERSION = (() => {
@@ -424,16 +425,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     case "phewsh_start": {
       let projectId = args.project_id;
       if (!projectId) {
-        if (projects.length === 1) projectId = projects[0].id;
-        else if (projects.find(p => p.id === "local")) projectId = "local";
-        else {
+        projectId = defaultStartProjectId(projects);
+        if (!projectId) {
           return { content: [{ type: "text", text: `Multiple projects available. Specify one:\n${projects.map(p => `- ${p.id}: ${p.name}`).join("\n")}` }] };
         }
       }
 
-      const project = projects.find(p => p.id === projectId);
-      if (!project) {
-        return { content: [{ type: "text", text: `Project "${projectId}" not found. Available: ${projects.map(p => `${p.id} (${p.name})`).join(", ")}` }] };
+      let project;
+      try {
+        project = resolveExactProject(projects, projectId);
+      } catch (err) {
+        if (!(err instanceof McpProjectError)) throw err;
+        return { content: [{ type: "text", text: err.message }] };
       }
 
       // Register this harness as a connected runtime so the HTTP /health
@@ -616,7 +619,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         } catch { /* spend logging is best-effort; never block task completion */ }
       }
 
-      updateLocalStatusMd(args.project_id, args.success, args.result.split("\n")[0], args.agent_id);
+      // Resolved through the shared identity rule before anything writes into
+      // `.intent/`. An unknown or ambiguous id now fails closed here rather than
+      // silently writing project truth into the server's own directory.
+      try {
+        updateLocalStatusMd(
+          resolveExactProject(loadProjects(), args.project_id),
+          args.success, args.result.split("\n")[0], args.agent_id,
+        );
+      } catch (error) {
+        if (!(error instanceof McpProjectError)) throw error;
+        // The completion itself is already recorded; only the .intent/ mirror
+        // is skipped, and the caller is told why rather than being misled.
+        console.error(`[phewsh] status.md not updated: ${error.message}`);
+      }
 
       if (args.agent_id) runtimes.touch(args.agent_id);
 
@@ -711,13 +727,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // ─── EVALUATE ACTION (pre-action enforcement gate) ──────────────────────
     case "phewsh_evaluate_action": {
-      const project = projects.find(p => p.id === args.project_id)
-        || projects.find(p => p.id === "local");
-      if (!project) return { content: [{ type: "text", text: `Project "${args.project_id}" not found.` }] };
+      // No fallback. A gate that answers for a project the caller did not name
+      // is worse than no gate, because the verdict is what everything
+      // downstream trusts.
+      let project;
+      try {
+        project = resolveExactProject(projects, args.project_id);
+      } catch (err) {
+        if (!(err instanceof McpProjectError)) throw err;
+        return { content: [{ type: "text", text: err.message }] };
+      }
 
       const result = evaluateAction(project, args);
 
-      recordSession(args.agent_id, args.project_id, "action_evaluated", {
+      // The verdict and the record must name ONE project. This previously filed
+      // the result under the REQUESTED id while evaluating a different one.
+      recordSession(args.agent_id, project.id, "action_evaluated", {
         taskId: args.task_id,
         proposedAction: String(args.proposed_action || "").slice(0, 200),
         status: result.status,

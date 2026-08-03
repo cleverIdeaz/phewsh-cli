@@ -171,8 +171,22 @@ export function recordBlocker(record) {
   return file;
 }
 
-export function updateLocalStatusMd(projectId, success, summaryLine, agentId) {
-  if (projectId !== "local") return;
+/**
+ * Append one execution line to the local project's status.md.
+ *
+ * Takes a RESOLVED project, never a raw caller string. This used to take
+ * `args.project_id` straight off an MCP tool call and compare it to the literal
+ * `"local"` — so the identity that authorized a write into `.intent/` was a name
+ * the caller chose, matched against a magic constant, and then written to
+ * whatever directory this server happened to be started in.
+ *
+ * The stdio surface has no registry, no repository path and no remote (see
+ * `loadProjects`), so the only `.intent/` it can honestly write is its own
+ * working directory's — and only when the caller named a project that actually
+ * RESOLVED to it. Anything else writes nothing.
+ */
+export function updateLocalStatusMd(project, success, summaryLine, agentId) {
+  if (project?.source !== "local" || project?.id !== "local") return;
   const intentDir = join(process.cwd(), ".intent");
   if (!existsSync(intentDir)) return;
   const statusFile = join(intentDir, "status.md");

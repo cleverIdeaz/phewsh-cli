@@ -24,7 +24,7 @@ const os = require('node:os');
 const { pair, listProjects, grantFor } = require('./helpers/grants');
 
 const BIN = path.join(__dirname, '..', 'bin', 'phewsh.js');
-const PORT = 7950 + Math.floor(Math.random() * 40);
+const PORT = 7940 + Math.floor(Math.random() * 40);
 
 const children = [];
 after(() => { for (const c of children) { try { c.kill(); } catch { /* already gone */ } } });
@@ -145,6 +145,20 @@ async function provenSession(port, id, scopes = ['truth:read', 'work:run', 'work
   return grantFor(port, hostGrant, id, scopes);
 }
 
+/**
+ * A run must name a contract the ENGINE composed and a human reviewed. These
+ * tests predate that requirement, so they were failing on the refusal rather
+ * than proving the binding they exist to prove. One-use and expires at use, so
+ * every dispatch needs its own.
+ */
+async function contractFor(port, projectId, runtimeId, task, token) {
+  const reviewed = await request(port, '/contract', {
+    method: 'POST', token, body: { projectId, runtimeId, task },
+  });
+  assert.strictEqual(reviewed.status, 200, `contract review failed: ${reviewed.raw}`);
+  return reviewed.body.contractId;
+}
+
 // One pairing per node, reused across a test's calls the way a real client
 // pairs once and then works.
 const hostGrants = new Map();
@@ -173,9 +187,13 @@ test('a dispatch bound to a project runs IN that project, not the worker cwd', a
   assert.ok(target?.id, 'repo B must be registered and carry a stable id');
 
   const token = await provenSession(port, target.id);
+  const contractId = await contractFor(port, target.id, 'claude-code', 'report your cwd', token);
   const res = await request(port, '/dispatch', {
     method: 'POST', token,
-    body: { actionId: 'bind-1', runtimeId: 'claude-code', projectId: target.id, packet: packet('report your cwd') },
+    body: {
+      actionId: 'bind-1', runtimeId: 'claude-code', projectId: target.id,
+      contractId, packet: packet('report your cwd'),
+    },
   });
   assert.strictEqual(res.status, 200);
   assert.ok(res.body.jobId, 'a bound dispatch must be accepted');
@@ -200,9 +218,13 @@ test('the run leaves repo A untouched', async () => {
   const target = projects.find((p) => p.remote && p.remote.includes('repo-b'));
 
   const token = await provenSession(port, target?.id || projects[0].id);
+  const contractId = await contractFor(port, target.id, 'claude-code', 'report your cwd', token);
   const res = await request(port, '/dispatch', {
     method: 'POST', token,
-    body: { actionId: 'bind-2', runtimeId: 'claude-code', projectId: target.id, packet: packet('report your cwd') },
+    body: {
+      actionId: 'bind-2', runtimeId: 'claude-code', projectId: target.id,
+      contractId, packet: packet('report your cwd'),
+    },
   });
   const terminal = await pollStatus(port, res.body.jobId, token);
   assert.strictEqual(terminal.status, 'done');
@@ -259,11 +281,12 @@ test('a caller-supplied path is never execution identity', async () => {
   // grant and projectId. None may redirect the run: the granted id is the only
   // thing that resolves a directory.
   for (const extra of [{ cwd: b }, { path: b }, { projectPath: b }]) {
+    const contractId = await contractFor(port, worker.id, 'claude-code', 'report your cwd', token);
     const res = await request(port, '/dispatch', {
       method: 'POST', token,
       body: {
         actionId: `p-${Object.keys(extra)[0]}`, runtimeId: 'claude-code',
-        projectId: worker.id, packet: packet('report your cwd'), ...extra,
+        projectId: worker.id, contractId, packet: packet('report your cwd'), ...extra,
       },
     });
     assert.strictEqual(res.status, 200, `bound dispatch refused: ${res.raw}`);
@@ -308,14 +331,26 @@ test('an interactive-only runtime is refused honestly, bound or not', async () =
   const target = projects.find((p) => p.remote && p.remote.includes('repo-b'));
 
   const token = await provenSession(port, target?.id || projects[0].id);
+  // The refusal has moved EARLIER, to contract review, which is the better
+  // place: nothing is queued, nothing spawns, and no receipt records an attempt
+  // that never happened. Bound or not is the point — a legitimate grant for a
+  // real project still cannot get a contract for a route that cannot run here.
+  const reviewed = await request(port, '/contract', {
+    method: 'POST', token,
+    body: { projectId: target.id, runtimeId: 'hermes', task: 'x' },
+  });
+  assert.ok(reviewed.status >= 400, `expected a refusal, got ${reviewed.status}: ${reviewed.raw}`);
+  assert.match(String(reviewed.body.error), /cannot take a run/i);
+  assert.ok(!reviewed.body.contractId, 'a refusal must not hand back a contract');
+
+  // And the run itself stays refused without one, so skipping review is not a
+  // way around the first gate.
   const res = await request(port, '/dispatch', {
     method: 'POST', token,
     body: { actionId: 'bind-6', runtimeId: 'hermes', projectId: target.id, packet: packet('x') },
   });
-  assert.strictEqual(res.status, 200, 'the job is accepted, then fails honestly');
-  const terminal = await pollStatus(port, res.body.jobId, token);
-  assert.strictEqual(terminal.status, 'error');
-  assert.match(terminal.error, /interactive/i);
+  assert.ok(res.status >= 400, 'dispatch without a reviewed contract must be refused');
+  assert.ok(!res.body.jobId, 'a refused dispatch must not create a job');
 });
 
 test('cancellation and its retry stay bound to the same job and project', async () => {
@@ -327,9 +362,13 @@ test('cancellation and its retry stay bound to the same job and project', async 
   const target = projects.find((p) => p.remote && p.remote.includes('repo-b'));
 
   const token = await provenSession(port, target?.id || projects[0].id);
+  const contractId = await contractFor(port, target.id, 'claude-code', 'report your cwd', token);
   const res = await request(port, '/dispatch', {
     method: 'POST', token,
-    body: { actionId: 'bind-7', runtimeId: 'claude-code', projectId: target.id, packet: packet('report your cwd') },
+    body: {
+      actionId: 'bind-7', runtimeId: 'claude-code', projectId: target.id,
+      contractId, packet: packet('report your cwd'),
+    },
   });
   const terminal = await pollStatus(port, res.body.jobId, token);
   assert.ok(['done', 'cancelled'].includes(terminal.status));
@@ -350,9 +389,13 @@ test('the receipt is filed under the project that ran, not the worker', async ()
   const target = projects.find((p) => p.remote && p.remote.includes('repo-b'));
 
   const token = await provenSession(port, target?.id || projects[0].id);
+  const contractId = await contractFor(port, target.id, 'claude-code', 'report your cwd', token);
   const res = await request(port, '/dispatch', {
     method: 'POST', token,
-    body: { actionId: 'bind-8', runtimeId: 'claude-code', projectId: target.id, packet: packet('report your cwd') },
+    body: {
+      actionId: 'bind-8', runtimeId: 'claude-code', projectId: target.id,
+      contractId, packet: packet('report your cwd'),
+    },
   });
   await pollStatus(port, res.body.jobId, token);
 
@@ -417,4 +460,50 @@ test('the unbound legacy dispatch is closed — it runs nothing and leaves nothi
     .filter((f) => f.endsWith('.json') && !f.startsWith('.'));
   assert.strictEqual(receipts.length, 0, 'a refused dispatch must not leave a receipt');
   assert.strictEqual(fs.readdirSync(a).includes('.phewsh-ran'), false, 'nothing may have executed in the worker directory');
+});
+
+// A contract binds the repository. Until this test it did not bind the CODE:
+// review and dispatch are separate calls, a contract lives for half an hour,
+// and a branch can move in between — a commit, a checkout, a detach. The
+// approval then reads as if it still applies to work the reviewer never saw.
+test('a run approved before the branch moved is refused, not silently re-pointed', async () => {
+  const port = PORT + 10;
+  const { env, a, b } = twoRepos();
+  startServe(port, a, env);
+  await waitForNode(port);
+  const { projects } = await idsFor(port);
+  const target = projects.find((p) => p.remote && p.remote.includes('repo-b'));
+  assert.ok(target?.id, 'repo B must be registered and carry a stable id');
+
+  const token = await provenSession(port, target.id);
+  const contractId = await contractFor(port, target.id, 'claude-code', 'report your cwd', token);
+
+  // What the reviewer approved is no longer what is checked out.
+  fs.writeFileSync(path.join(b, 'landed.txt'), 'work the reviewer never saw');
+  execFileSync('git', ['add', 'landed.txt'], { cwd: b, stdio: 'ignore' });
+  execFileSync('git', ['commit', '-q', '-m', 'landed'], { cwd: b, stdio: 'ignore' });
+
+  const moved = await request(port, '/dispatch', {
+    method: 'POST', token,
+    body: {
+      actionId: 'moved-1', runtimeId: 'claude-code', projectId: target.id,
+      contractId, packet: packet('report your cwd'),
+    },
+  });
+  assert.strictEqual(moved.status, 409, `a moved checkout still ran (${moved.status}): ${moved.raw}`);
+  assert.match(String(moved.body?.error || ''), /moved|review it again/iu,
+    'the refusal must say the project moved, not imply the approval still holds');
+  assert.ok(!moved.body?.jobId, 'a refused dispatch must not create a job');
+
+  // And the refusal SPENDS it. Leaving a stale approval in the store would let
+  // a caller retry until the tree happened to line up again.
+  const replay = await request(port, '/dispatch', {
+    method: 'POST', token,
+    body: {
+      actionId: 'moved-2', runtimeId: 'claude-code', projectId: target.id,
+      contractId, packet: packet('report your cwd'),
+    },
+  });
+  assert.strictEqual(replay.status, 409, `a refused contract was replayable (${replay.status})`);
+  assert.ok(!replay.body?.jobId, 'a replayed contract must not create a job');
 });

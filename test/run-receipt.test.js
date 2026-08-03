@@ -39,6 +39,7 @@ const baseInput = () => ({
   jobId: '9b0a22a1-5a3b-43cb-be5f-1bd7710c80f1',
   projectId: 'phewsh',
   boundProjectId: '8a849716ebfaf431',
+  boundProjectRemote: 'github.com/cleverideaz/phewsh',
   runtimeId: 'claude-code',
   runtimeLabel: 'Claude Code',
   startedAt: '2026-07-29T02:19:11.929Z',
@@ -164,9 +165,13 @@ function intentFixture() {
 const hashOf = (file) => require('node:crypto')
   .createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
+// Closure receives receipts after the data layer has reread and verified the
+// persisted bytes. Building the schema alone intentionally has no verdict.
+const intactReceipt = () => ({ ...buildRunReceipt(baseInput()), integrity: 'intact' });
+
 test('a proposal shows the exact change and pins what it was computed against', () => {
   const intentDir = intentFixture();
-  const receipt = buildRunReceipt(baseInput());
+  const receipt = intactReceipt();
   const proposal = buildClosureProposal({ receipt, note: 'The run reported its directory.', intentDir });
 
   assert.ok(proposal.proposalId);
@@ -185,14 +190,14 @@ test('a proposal shows the exact change and pins what it was computed against', 
 test('a proposed Next change names the exact transition', () => {
   const intentDir = intentFixture();
   const proposal = buildClosureProposal({
-    receipt: buildRunReceipt(baseInput()), note: 'done', intentDir, markNextDone: true,
+    receipt: intactReceipt(), note: 'done', intentDir, markNextDone: true,
   });
   assert.deepStrictEqual(proposal.next.change, { id: 'n1', title: 'Ship the local journey', from: 'now', to: 'done' });
 });
 
 test('rejecting leaves .intent/ byte-identical and still keeps the receipt', () => {
   const intentDir = intentFixture();
-  const receipt = buildRunReceipt(baseInput());
+  const receipt = intactReceipt();
   const proposal = buildClosureProposal({ receipt, note: 'not this', intentDir, markNextDone: true });
   const before = {
     decisions: fs.readFileSync(path.join(intentDir, 'decisions.md')),
@@ -212,7 +217,7 @@ test('rejecting leaves .intent/ byte-identical and still keeps the receipt', () 
 test('accepting applies exactly the reviewed change and nothing else', () => {
   const intentDir = intentFixture();
   const proposal = buildClosureProposal({
-    receipt: buildRunReceipt(baseInput()), note: 'The run reported its directory.', intentDir, markNextDone: true,
+    receipt: intactReceipt(), note: 'The run reported its directory.', intentDir, markNextDone: true,
   });
 
   const outcome = applyClosure({ proposal, decision: 'accept', intentDir });
@@ -228,7 +233,7 @@ test('accepting applies exactly the reviewed change and nothing else', () => {
 test('a retried acceptance cannot duplicate the Record or the Next change', () => {
   const intentDir = intentFixture();
   const proposal = buildClosureProposal({
-    receipt: buildRunReceipt(baseInput()), note: 'Exactly once.', intentDir,
+    receipt: intactReceipt(), note: 'Exactly once.', intentDir,
   });
 
   const first = applyClosure({ proposal, decision: 'accept', intentDir });
@@ -246,7 +251,7 @@ test('a retried acceptance cannot duplicate the Record or the Next change', () =
 test('acceptance fails closed when the files moved since the preview', () => {
   const intentDir = intentFixture();
   const proposal = buildClosureProposal({
-    receipt: buildRunReceipt(baseInput()), note: 'stale', intentDir,
+    receipt: intactReceipt(), note: 'stale', intentDir,
   });
   // Someone (or another tool) edited project truth after the human read the preview.
   fs.appendFileSync(path.join(intentDir, 'decisions.md'), '- 2026-07-29 — Someone else wrote here.\n');
@@ -263,7 +268,7 @@ test('acceptance fails closed when the files moved since the preview', () => {
 test('acceptance is never rewritten as a claim about the work', () => {
   const intentDir = intentFixture();
   const proposal = buildClosureProposal({
-    receipt: buildRunReceipt(baseInput()), note: 'Ran the thing.', intentDir,
+    receipt: intactReceipt(), note: 'Ran the thing.', intentDir,
   });
   applyClosure({ proposal, decision: 'accept', intentDir });
   const decisions = fs.readFileSync(path.join(intentDir, 'decisions.md'), 'utf8');
@@ -285,6 +290,7 @@ test('the shared fixture still matches what the engine produces', () => {
     jobId: fixture.jobId,
     projectId: fixture.projectId,
     boundProjectId: fixture.boundProjectId,
+    boundProjectRemote: fixture.boundProjectRemote,
     runtimeId: fixture.runtimeId,
     runtimeLabel: fixture.runtimeLabel,
     startedAt: fixture.startedAt,
@@ -307,7 +313,7 @@ test('a closure that cannot finish writes nothing at all', () => {
   // the Record line is the idempotency key, so it must be the final act.
   const intentDir = intentFixture();
   const proposal = buildClosureProposal({
-    receipt: buildRunReceipt(baseInput()), note: 'Half-applied is not a state.',
+    receipt: intactReceipt(), note: 'Half-applied is not a state.',
     intentDir, markNextDone: true,
   });
   const recordBefore = fs.readFileSync(path.join(intentDir, 'decisions.md'));
@@ -327,7 +333,7 @@ test('a closure that cannot finish writes nothing at all', () => {
 
 test('a retry after a refused closure still applies cleanly', () => {
   const intentDir = intentFixture();
-  const receipt = buildRunReceipt(baseInput());
+  const receipt = intactReceipt();
   const stale = buildClosureProposal({ receipt, note: 'First attempt.', intentDir, markNextDone: true });
   const next = JSON.parse(fs.readFileSync(path.join(intentDir, 'next.json'), 'utf8'));
   next.items[0].state = 'done';

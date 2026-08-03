@@ -19,7 +19,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 
 const BIN = path.join(__dirname, '..', 'bin', 'phewsh.js');
-const PORT = 7860 + Math.floor(Math.random() * 40);
+const PORT = 7840 + Math.floor(Math.random() * 40);
 
 const children = [];
 after(() => { for (const c of children) { try { c.kill(); } catch { /* gone */ } } });
@@ -279,6 +279,216 @@ test('accepting applies exactly the reviewed change, once, and is retry-safe', a
   assert.strictEqual(after.split('Adopting this once.').length - 1, 1, 'exactly one Record entry');
 });
 
+// A closure decision is a person's judgement, and the FIRST one is the answer.
+// Rejection returned an outcome and recorded nothing durable, so the proposal
+// stayed decidable: a reject followed by an accept still wrote the Record line
+// the person had just declined. The reverse is as bad — an accept followed by a
+// reject answered "reject, applied: false" for work already in project truth.
+test('the first closure decision is final — the opposite replay is a conflict', async () => {
+  const port = PORT + 20;
+  const { env, repo } = fixture();
+  startServe(port, repo, env);
+  await waitForNode(port);
+  const id = await projectId(port);
+  const token = await provenSession(port, id);
+  await runOnce(port, id, 'change a file', token);
+  const receiptId = (await request(port, `/receipts/run?projectId=${id}`, { token })).body.receipts[0].receiptId;
+  const before = hashes(repo);
+
+  const preview = await request(port, '/closure/preview', {
+    method: 'POST', token, body: { projectId: id, receiptId, note: 'Declining this.', markNextDone: true },
+  });
+  const { proposalId } = preview.body;
+
+  const rejected = await request(port, '/closure/decide', {
+    method: 'POST', token, body: { projectId: id, decision: 'reject', proposalId },
+  });
+  assert.strictEqual(rejected.body.decision, 'reject');
+  assert.deepStrictEqual(hashes(repo), before);
+
+  // The identical retry of a lost response is safe and says the same thing.
+  const replay = await request(port, '/closure/decide', {
+    method: 'POST', token, body: { projectId: id, decision: 'reject', proposalId },
+  });
+  assert.strictEqual(replay.status, 200);
+  assert.strictEqual(replay.body.decision, 'reject');
+  assert.strictEqual(replay.body.applied, false);
+  assert.deepStrictEqual(hashes(repo), before, 'a replayed rejection must still write nothing');
+
+  // Changing the answer afterwards is not a retry. It must not write.
+  const flipped = await request(port, '/closure/decide', {
+    method: 'POST', token, body: { projectId: id, decision: 'accept', proposalId },
+  });
+  assert.strictEqual(flipped.status, 409, `a reversed decision must conflict: ${flipped.raw}`);
+  assert.match(String(flipped.body.error), /reject/i, 'the refusal must name the decision already made');
+  assert.deepStrictEqual(hashes(repo), before,
+    'the Record must not carry a line the person declined');
+});
+
+// Found by an independent critic: the finality check above was one HTTP call away
+// from useless. A proposalId is DERIVED from the receipt, the note and the
+// baseline, so re-running the identical preview returns the same id — and
+// remembering it overwrote the stored entry, discarding the decision with it.
+// Reject, preview again, accept: the declined line went into the Record with no
+// second human gesture anywhere.
+test('re-previewing an identical proposal cannot launder away a rejection', async () => {
+  const port = PORT + 24;
+  const { env, repo } = fixture();
+  startServe(port, repo, env);
+  await waitForNode(port);
+  const id = await projectId(port);
+  const token = await provenSession(port, id);
+  await runOnce(port, id, 'change a file', token);
+  const receiptId = (await request(port, `/receipts/run?projectId=${id}`, { token })).body.receipts[0].receiptId;
+  const before = hashes(repo);
+
+  const body = { projectId: id, receiptId, note: 'Reviewed and DECLINED.', markNextDone: true };
+  const first = await request(port, '/closure/preview', { method: 'POST', token, body });
+  const rejected = await request(port, '/closure/decide', {
+    method: 'POST', token, body: { projectId: id, decision: 'reject', proposalId: first.body.proposalId },
+  });
+  assert.strictEqual(rejected.body.decision, 'reject');
+
+  // The same review again. Same inputs, same baseline, therefore the same id.
+  const second = await request(port, '/closure/preview', { method: 'POST', token, body });
+  assert.strictEqual(second.status, 200, second.raw);
+  assert.strictEqual(second.body.proposalId, first.body.proposalId,
+    'this test is only meaningful while the id is deterministic');
+
+  const flipped = await request(port, '/closure/decide', {
+    method: 'POST', token, body: { projectId: id, decision: 'accept', proposalId: second.body.proposalId },
+  });
+  assert.strictEqual(flipped.status, 409, `a re-preview must not reopen the decision: ${flipped.raw}`);
+  assert.deepStrictEqual(hashes(repo), before,
+    'the Record must not carry a line the person declined');
+});
+
+test('an accepted closure cannot be reversed into a rejection', async () => {
+  const port = PORT + 21;
+  const { env, repo } = fixture();
+  startServe(port, repo, env);
+  await waitForNode(port);
+  const id = await projectId(port);
+  const token = await provenSession(port, id);
+  await runOnce(port, id, 'change a file', token);
+  const receiptId = (await request(port, `/receipts/run?projectId=${id}`, { token })).body.receipts[0].receiptId;
+
+  const preview = await request(port, '/closure/preview', {
+    method: 'POST', token, body: { projectId: id, receiptId, note: 'Adopting this.', markNextDone: true },
+  });
+  const { proposalId } = preview.body;
+
+  const accepted = await request(port, '/closure/decide', {
+    method: 'POST', token, body: { projectId: id, decision: 'accept', proposalId },
+  });
+  assert.strictEqual(accepted.body.applied, true);
+  const afterAccept = hashes(repo);
+
+  const flipped = await request(port, '/closure/decide', {
+    method: 'POST', token, body: { projectId: id, decision: 'reject', proposalId },
+  });
+  assert.strictEqual(flipped.status, 409, `a reversed decision must conflict: ${flipped.raw}`);
+  assert.match(String(flipped.body.error), /accept/i);
+  assert.deepStrictEqual(hashes(repo), afterAccept,
+    'a rejection cannot un-write accepted project truth, so it must not pretend to');
+});
+
+// A grant names a REPOSITORY. If `.intent` is a symlink, `truth:read` for one
+// project becomes a reader for wherever the link points, and an accepted closure
+// writes the Record outside the repo. Creating that link needs no privilege —
+// every harness the engine runs inside a registered repo can do it.
+test('a symlinked .intent cannot be read or written through a project grant', async () => {
+  const port = PORT + 22;
+  const { env, repo } = fixture();
+  const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'phewsh-outside-truth-')));
+  fs.writeFileSync(path.join(outside, 'decisions.md'), '# Not this project\n');
+  fs.writeFileSync(path.join(outside, 'vision.md'), '# Someone else\n');
+
+  startServe(port, repo, env);
+  await waitForNode(port);
+  const id = await projectId(port);
+  const token = await provenSession(port, id);
+
+  // Registered honestly, then re-pointed at another directory entirely.
+  fs.rmSync(path.join(repo, '.intent'), { recursive: true });
+  fs.symlinkSync(outside, path.join(repo, '.intent'));
+
+  const truth = await request(port, `/local-truth?projectId=${id}`, { token });
+  assert.strictEqual(truth.status, 403, `a link out of the repo must be refused: ${truth.raw}`);
+  assert.match(String(truth.body.error), /outside the registered project/i,
+    'the refusal must be containment, so this cannot pass for some other reason');
+  assert.ok(!truth.raw.includes('Someone else'), 'no content from outside the repo may be returned');
+
+  const preview = await request(port, '/closure/preview', {
+    method: 'POST', token, body: { projectId: id, receiptId: 'r-anything', note: 'x' },
+  });
+  assert.ok(preview.status >= 400, 'no proposal may be built against truth outside the repo');
+  assert.deepStrictEqual(
+    fs.readFileSync(path.join(outside, 'decisions.md'), 'utf8'), '# Not this project\n',
+    'nothing outside the repository may be written',
+  );
+});
+
+// Repo A, then repo B, at the SAME PATH.
+//
+// This is the sharp case because the stable project id is derived from the path,
+// so A and B share one id. Only the bound remote can tell them apart. If any
+// surface trusts the id alone, then cloning a different repository over a
+// registered directory inherits the previous project's grants and evidence —
+// and could close A's work into B's Record.
+test('a different repository at the same path inherits nothing from the last one', async () => {
+  const port = PORT + 23;
+  const { env, repo } = fixture();
+  startServe(port, repo, env);
+  await waitForNode(port);
+  const id = await projectId(port);
+  const tokenA = await provenSession(port, id);
+  await runOnce(port, id, 'work done for repo A', tokenA);
+  const receiptA = (await request(port, `/receipts/run?projectId=${id}`, { token: tokenA }))
+    .body.receipts[0].receiptId;
+  assert.ok(receiptA, 'repo A must have left a receipt to try to misuse');
+
+  // Repo B now occupies that directory, and is registered honestly.
+  const git = (args) => execFileSync('git', args, {
+    cwd: repo, env: { ...process.env, NO_COLOR: '1', ...env }, stdio: 'ignore',
+  });
+  git(['remote', 'set-url', 'origin', 'https://github.com/example/somewhere-else.git']);
+  execFileSync(process.execPath, [BIN, 'project', 'add'], {
+    cwd: repo, env: { ...process.env, NO_COLOR: '1', ...env }, stdio: 'ignore',
+  });
+
+  // 1. The old grant cannot control anything, even though its id still matches.
+  const stale = await request(port, `/receipts/run?projectId=${id}`, { token: tokenA });
+  assert.ok(stale.status >= 400,
+    `a grant for the previous repository must not act on this one: ${stale.raw}`);
+
+  const idB = await projectId(port);
+  assert.strictEqual(idB, id, 'this test is only meaningful while the path-derived id is unchanged');
+  const tokenB = await provenSession(port, idB);
+
+  // 2. A's evidence must not appear in B's list.
+  const listed = await request(port, `/receipts/run?projectId=${idB}`, { token: tokenB });
+  assert.strictEqual(listed.status, 200, listed.raw);
+  assert.ok(
+    !listed.body.receipts.some((r) => r.receiptId === receiptA),
+    "the previous repository's receipts must not auto-list for this one",
+  );
+
+  // 3. Nor be readable by id under B's grant.
+  const read = await request(port, `/receipt?id=${receiptA}`, { token: tokenB });
+  assert.strictEqual(read.status, 403, `A's receipt must not be readable as B: ${read.raw}`);
+
+  // 4. Nor be closeable into B's Record — the whole point.
+  const beforeTruth = hashes(repo);
+  const preview = await request(port, '/closure/preview', {
+    method: 'POST', token: tokenB,
+    body: { projectId: idB, receiptId: receiptA, note: 'Adopting the other repo work.' },
+  });
+  assert.ok(preview.status >= 400, `A's evidence must not build a proposal for B: ${preview.raw}`);
+  assert.deepStrictEqual(hashes(repo), beforeTruth,
+    "B's project truth must be byte-identical after the attempt");
+});
+
 test('an acceptance reviewed against stale files fails closed', async () => {
   const port = PORT + 4;
   const { env, repo } = fixture();
@@ -353,6 +563,32 @@ test('the human decision is recorded as its own event, never folded into the rec
   assert.strictEqual(decision.receiptId, receiptId);
   assert.strictEqual(decision.decision, 'accept');
   assert.strictEqual(decision.boundProjectId, id);
+});
+
+test('an altered receipt cannot produce a closure preview', async () => {
+  const port = PORT + 13;
+  const { env, repo, home } = fixture();
+  startServe(port, repo, env);
+  await waitForNode(port);
+  const id = await projectId(port);
+  const token = await provenSession(port, id);
+  await runOnce(port, id, 'change a file', token);
+  const receiptId = (await request(port, `/receipts/run?projectId=${id}`, { token }))
+    .body.receipts[0].receiptId;
+  const before = hashes(repo);
+
+  // Keep the JSON readable while changing its bytes, so the data layer returns
+  // the explicit `altered` verdict rather than treating the receipt as missing.
+  fs.appendFileSync(path.join(home, '.phewsh', 'receipts', `${receiptId}.json`), '\n');
+
+  const preview = await request(port, '/closure/preview', {
+    method: 'POST', token,
+    body: { projectId: id, receiptId, note: 'Must not reach the Record.' },
+  });
+  assert.strictEqual(preview.status, 409, preview.raw);
+  assert.match(String(preview.body?.error || ''), /integrity.*intact/iu);
+  assert.deepStrictEqual(hashes(repo), before,
+    'a receipt that fails integrity must not change project truth');
 });
 
 // ─── What the independent critic found (2026-07-29) ──────────────────────────
@@ -537,4 +773,131 @@ test('every local operation except an accepted closure leaves .intent/ byte-iden
 
   assert.deepStrictEqual(hashes(repo), before,
     'only an accepted closure may change project truth');
+});
+
+test('an expired closure review cannot be applied to project truth', async () => {
+  const port = PORT + 12;
+  const { env, repo } = fixture();
+  env.PHEWSH_PROPOSAL_TTL_MS = '20';
+  startServe(port, repo, env);
+  await waitForNode(port);
+  const id = await projectId(port);
+  const token = await provenSession(port, id);
+  await runOnce(port, id, 'change a file', token);
+  const receiptId = (await request(port, `/receipts/run?projectId=${id}`, { token }))
+    .body.receipts[0].receiptId;
+  const preview = await request(port, '/closure/preview', {
+    method: 'POST', token,
+    body: { projectId: id, receiptId, note: 'This review must expire.', markNextDone: true },
+  });
+  assert.strictEqual(preview.status, 200, preview.raw);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const before = hashes(repo);
+
+  const expired = await request(port, '/closure/decide', {
+    method: 'POST', token,
+    body: {
+      projectId: id, decision: 'accept', proposalId: preview.body.proposalId,
+    },
+  });
+  assert.strictEqual(expired.status, 409, `an expired review was applied (${expired.status})`);
+  assert.match(String(expired.body?.error || ''), /expired|review/i);
+  assert.deepStrictEqual(hashes(repo), before,
+    'an expired closure review changed Project truth');
+});
+
+// Found by an independent critic: a raw `fs` ENOENT was handed straight to the
+// caller, carrying the absolute repository path and this node's PID — while
+// /host/projects and /cockpit deliberately withhold absolute paths. And
+// /closure/preview answered 200 for a project with no .intent/ at all, so it
+// previewed a write that could never succeed and failed later as that same raw error.
+test('a project with no .intent/ is refused honestly, without leaking a path or a pid', async () => {
+  const port = PORT + 25;
+  const { env, repo } = fixture();
+  startServe(port, repo, env);
+  await waitForNode(port);
+  const id = await projectId(port);
+  const token = await provenSession(port, id);
+  await runOnce(port, id, 'change a file', token);
+  const receiptId = (await request(port, `/receipts/run?projectId=${id}`, { token })).body.receipts[0].receiptId;
+
+  fs.rmSync(path.join(repo, '.intent'), { recursive: true });
+
+  const preview = await request(port, '/closure/preview', {
+    method: 'POST', token, body: { projectId: id, receiptId, note: 'Adopting this.' },
+  });
+  assert.ok(preview.status >= 400, `a project with no Record must be refused: ${preview.raw}`);
+  assert.match(String(preview.body.error), /\.intent/, 'the refusal must name what is missing');
+
+  // Nothing in any refusal may carry an absolute path or this process's pid.
+  for (const raw of [preview.raw]) {
+    assert.ok(!raw.includes(repo), `the absolute repo path leaked: ${raw}`);
+    assert.ok(!/ENOENT|\.tmp/.test(raw), `a raw fs error leaked: ${raw}`);
+    assert.ok(!new RegExp(`\\b${process.pid}\\b`).test(raw), `a pid leaked: ${raw}`);
+  }
+});
+
+// The journey the whole loop exists for: does the PROJECT actually move?
+//
+// Every test above proves the loop is SAFE — rejections leave truth
+// byte-identical, replays conflict, forged proposals are refused, stale reviews
+// fail closed. None of them proves it is USEFUL. A person does not run work to
+// admire a receipt; they run it so the project advances and they are told what
+// is next. That is the difference between a tool that did a thing and a layer
+// that keeps a project moving, and until now nothing asserted it.
+test('accepting a run advances the project — the next obligation becomes the current one', async () => {
+  const port = PORT + 26;
+  const { env, repo } = fixture();
+
+  // Two obligations, so "done" has somewhere to go. With only one, finishing it
+  // leaves an empty Next, which proves nothing about advancing.
+  fs.writeFileSync(path.join(repo, '.intent', 'next.json'), JSON.stringify({
+    items: [
+      { id: 'n1', title: 'Close the loop', state: 'now', criteria: [] },
+      { id: 'n2', title: 'Write the handoff', state: 'next', criteria: [] },
+    ],
+  }, null, 2));
+
+  startServe(port, repo, env);
+  await waitForNode(port);
+  const id = await projectId(port);
+  const token = await provenSession(port, id);
+
+  const before = await request(port, `/local-truth?projectId=${id}`, { token });
+  assert.strictEqual(before.body.next.title, 'Close the loop', 'the fixture must start on the first obligation');
+  const recordBefore = before.body.record.total;
+
+  await runOnce(port, id, 'change a file', token);
+  const receiptId = (await request(port, `/receipts/run?projectId=${id}`, { token })).body.receipts[0].receiptId;
+
+  const preview = await request(port, '/closure/preview', {
+    method: 'POST', token,
+    body: { projectId: id, receiptId, note: 'This closes the loop.', markNextDone: true },
+  });
+  assert.strictEqual(preview.status, 200, `preview refused: ${preview.raw}`);
+
+  const decided = await request(port, '/closure/decide', {
+    method: 'POST', token,
+    body: { projectId: id, decision: 'accept', proposalId: preview.body.proposalId },
+  });
+  assert.strictEqual(decided.status, 200, `accept refused: ${decided.raw}`);
+
+  // THE ASSERTION THAT MATTERS: read the project the way a surface reads it,
+  // and the obligation a person is looking at has moved on.
+  const after = await request(port, `/local-truth?projectId=${id}`, { token });
+  assert.strictEqual(after.status, 200);
+  assert.strictEqual(
+    after.body.next.title, 'Write the handoff',
+    'the project did not advance — the finished obligation is still the current one',
+  );
+
+  // ...and what was learned was kept, not just what was done.
+  assert.ok(after.body.record.total > recordBefore,
+    'the Record did not grow — the outcome was applied but nothing was remembered');
+
+  // The completed item is marked done in the project's own files, so a
+  // different tool opening this repo next sees the same advance.
+  const onDisk = JSON.parse(fs.readFileSync(path.join(repo, '.intent', 'next.json'), 'utf8'));
+  assert.strictEqual(onDisk.items.find((i) => i.id === 'n1').state, 'done',
+    'the finished obligation was not recorded as done in .intent/');
 });
