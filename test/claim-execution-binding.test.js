@@ -33,8 +33,9 @@ const BIN = path.join(__dirname, '..', 'bin', 'phewsh.js');
 //   7940–7991 dispatch-binding   8100–8311 serve-bridge
 //   8500–8611 endpoint-policy    8700–8771 ground-project
 //   8800–8891 critic-findings
-// 7992–8099 is the free gap; this file needs 8 ports (offsets 0–7).
-const PORT = 8000 + Math.floor(Math.random() * 80);
+// 7992–8099 is the free gap; this file needs 11 ports (offsets 0–10), so the
+// span is capped to keep the top of the band (8069+10 = 8079) clear of 8100.
+const PORT = 8000 + Math.floor(Math.random() * 70);
 const CLOUD_ID = '11111111-1111-4111-8111-111111111111';
 const TASK_ID = '22222222-2222-4222-8222-222222222222';
 const OTHER_TASK_ID = '33333333-3333-4333-8333-333333333333';
@@ -302,6 +303,99 @@ test('the claim receipt names the repository and the commit baseline it ran agai
     // Filed under the project NAME, the grouping key the receipt layer reads —
     // not under the literal "ion", which was findable from no project at all.
     assert.strictEqual(event.projectId, 'team-app');
+  } finally {
+    node.child.kill('SIGKILL');
+  }
+});
+
+// ─── Claim state: what the Work board reads ─────────────────────────────────
+//
+// /status/:jobId covers the dispatch path only — its jobs are keyed by a jobId
+// no Ion task ever has. Claimed tasks are keyed by the task itself, which is
+// the handle a board actually holds, so they report through /claim/status.
+
+const get = (port, pathname, token) => request(port, pathname, {
+  method: 'GET', headers: token ? projHdr(token) : {},
+});
+
+/** Wait for a claim to reach a terminal state, or fail loudly. */
+async function settled(port, token, taskId, timeoutMs = 8000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await get(port, '/claim/status', token);
+    assert.strictEqual(res.status, 200, `claim status refused: ${res.raw}`);
+    const claim = res.body.claims.find((c) => c.taskId === taskId);
+    if (claim && ['completed', 'failed', 'cancelled'].includes(claim.state)) return claim;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`claim ${taskId.slice(0, 8)} never reached a terminal state`);
+}
+
+test('claim state is not readable without the same grant that starts a claim', async () => {
+  const port = PORT + 8;
+  const node = await bootNode(port, 'claim-status-ungranted');
+  try {
+    // An ungranted caller must learn nothing — not the tasks, not that any
+    // exist. The same rule /claim itself follows.
+    const res = await get(port, '/claim/status');
+    assert.ok(res.status === 401 || res.status === 403, `ungranted read must refuse, got ${res.status}: ${res.raw}`);
+    assert.ok(!/taskId|claims/.test(res.raw) || !res.body?.claims, 'a refusal must not enumerate claims');
+  } finally {
+    node.child.kill('SIGKILL');
+  }
+});
+
+test('a finished claim keeps its outcome instead of vanishing, and the task can be claimed again', async () => {
+  const port = PORT + 9;
+  const node = await bootNode(port, 'claim-status-outcome');
+  try {
+    const { body: { contractId } } = await review(port, node.token);
+    const started = await post(port, '/claim', {
+      projectId: CLOUD_ID, taskId: TASK_ID, runtimeId: null, contractId,
+    }, node.token);
+    assert.strictEqual(started.status, 202, `the reviewed claim must run: ${started.raw}`);
+
+    // Before this, a finished claim was DELETED: a task that completed or
+    // failed became indistinguishable from one never claimed at all.
+    const claim = await settled(port, node.token, TASK_ID);
+    assert.ok(['completed', 'failed'].includes(claim.state));
+    assert.strictEqual(claim.taskId, TASK_ID);
+    assert.ok(claim.changedAt, 'a terminal claim must carry when it changed, not just when it started');
+    assert.ok(Date.parse(claim.changedAt) >= Date.parse(claim.startedAt));
+
+    // Keeping the outcome must not cost the ability to retry. A fresh review
+    // of the same task has to be accepted, not refused as "already claiming".
+    const { body: { contractId: second } } = await review(port, node.token);
+    const retry = await post(port, '/claim', {
+      projectId: CLOUD_ID, taskId: TASK_ID, runtimeId: null, contractId: second,
+    }, node.token);
+    assert.strictEqual(retry.status, 202, `a finished task must be re-claimable: ${retry.raw}`);
+  } finally {
+    node.child.kill('SIGKILL');
+  }
+});
+
+test('claim state names the task, project and worker without leaking the child process', async () => {
+  const port = PORT + 10;
+  const node = await bootNode(port, 'claim-status-shape');
+  try {
+    const { body: { contractId } } = await review(port, node.token);
+    await post(port, '/claim', {
+      projectId: CLOUD_ID, taskId: TASK_ID, runtimeId: null, contractId,
+    }, node.token);
+    const claim = await settled(port, node.token, TASK_ID);
+
+    assert.strictEqual(claim.cloudProjectId, CLOUD_ID);
+    assert.ok(claim.projectId, 'the stable local project id must be named');
+    assert.ok(claim.claimId, 'the claim must be identifiable');
+    // The map holds a live ChildProcess. Serializing it would put a PID and a
+    // pile of stream handles on the wire.
+    assert.strictEqual(claim.child, undefined, 'the child process handle must never be serialized');
+
+    const res = await get(port, '/claim/status', node.token);
+    assert.ok(res.body.workerId, 'the answer must name which worker it came from');
+    assert.ok(res.body.observedAt, 'the answer must say when it was observed');
+    assert.ok(!/"child"|"_handle"|"stdin"/.test(res.raw), `no process internals on the wire: ${res.raw.slice(0, 200)}`);
   } finally {
     node.child.kill('SIGKILL');
   }

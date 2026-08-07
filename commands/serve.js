@@ -616,9 +616,31 @@ const CLAIM_BIN = path.join(__dirname, '..', 'bin', 'phewsh.js');
 /** Exactly what will be spawned — digested at review, re-digested before spend. */
 const claimArgv = (claim) => claimCommand(CLAIM_BIN, claim);
 
+// A finished claim used to be DELETED, which erased the only moment worth
+// reporting: a task that completed or failed became indistinguishable from one
+// that was never claimed. Terminal entries are now kept so a surface can read
+// the outcome, and pruned on the next claim so the map cannot grow without
+// bound. 30 minutes is long enough for a person to look, short enough that a
+// long-lived worker does not accumulate history it was never asked to keep.
+const CLAIM_RETENTION_MS = 30 * 60 * 1000;
+
+function pruneFinishedClaims(now = Date.now()) {
+  for (const [key, entry] of claimRuns) {
+    if (!workerState.isTerminal(entry.state)) continue;
+    if (now - Date.parse(entry.changedAt) > CLAIM_RETENTION_MS) claimRuns.delete(key);
+  }
+}
+
 function startLocalClaim(claim, contract, contractId) {
   const key = `${claim.projectId}:${claim.taskId}`;
-  if (claimRuns.has(key)) throw new LocalClaimError('This task is already being claimed on this machine.', 409);
+  pruneFinishedClaims();
+  // Only work still in flight blocks a new claim. A task that finished — however
+  // it finished — must be re-claimable, or keeping its outcome would cost the
+  // ability to retry it.
+  const inFlight = claimRuns.get(key);
+  if (inFlight && !workerState.isTerminal(inFlight.state)) {
+    throw new LocalClaimError('This task is already being claimed on this machine.', 409);
+  }
 
   const claimId = crypto.randomUUID();
   const child = spawn(process.execPath, claimArgv(claim), {
@@ -627,7 +649,30 @@ function startLocalClaim(claim, contract, contractId) {
     env: { ...process.env },
     windowsHide: true,
   });
-  claimRuns.set(key, { claimId, child });
+  const startedAt = new Date().toISOString();
+  const entry = {
+    claimId,
+    child,
+    taskId: claim.taskId,
+    cloudProjectId: claim.projectId,
+    boundProjectId: projectId(claim.project.path),
+    runtimeId: claim.runtimeId || null,
+    // `claiming` is honest until the OS confirms the process actually started —
+    // spawn() returns a handle before that is known.
+    state: 'claiming',
+    startedAt,
+    // A REAL transition time, unlike the dispatch path, which has none. This is
+    // what lets a surface tell a wedged run from a fresh one.
+    changedAt: startedAt,
+    exitCode: null,
+  };
+  const moveTo = (state, exitCode = null) => {
+    entry.state = state;
+    entry.changedAt = new Date().toISOString();
+    if (exitCode !== null) entry.exitCode = exitCode;
+  };
+  child.once('spawn', () => moveTo('running'));
+  claimRuns.set(key, entry);
   // Filed under the project NAME — the receipt layer's grouping key, the same
   // convention `createJob` follows — with the stable ids alongside. This event
   // used to carry only claimId + taskId under the literal "ion", which made the
@@ -644,12 +689,22 @@ function startLocalClaim(claim, contract, contractId) {
     boundWorkerId: contract.boundWorkerId,
     runtimeId: claim.runtimeId || null,
   });
-  const finish = (message) => {
-    claimRuns.delete(key);
+  const finish = (state, exitCode, message) => {
+    // Deliberately NOT deleted — the outcome is the part a board needs. Pruning
+    // happens on the next claim, by age.
+    moveTo(state, exitCode);
     if (message) console.log(`  ${g(message)}`);
   };
-  child.once('exit', (code) => finish(`Ion claim ${claim.taskId.slice(0, 8)} exited ${code}`));
-  child.once('error', (error) => finish(`Ion claim ${claim.taskId.slice(0, 8)} could not start: ${error.message}`));
+  child.once('exit', (code) => finish(
+    // A non-zero exit is a failed run, not a completed one. Reporting every exit
+    // as `completed` would let a harness that died look like work that finished.
+    code === 0 ? 'completed' : 'failed',
+    code,
+    `Ion claim ${claim.taskId.slice(0, 8)} exited ${code}`,
+  ));
+  child.once('error', (error) => finish(
+    'failed', null, `Ion claim ${claim.taskId.slice(0, 8)} could not start: ${error.message}`,
+  ));
   return claimId;
 }
 
@@ -1353,6 +1408,44 @@ function main() {
       }
     }
 
+    // What this worker is carrying for the granted project, keyed by TASK —
+    // which is the handle a board actually holds. The dispatch path's
+    // /status/:jobId needs a jobId no Ion task ever has.
+    //
+    // Same `work:run` scope as starting a claim: a caller entitled to run work
+    // here may see the state of that work, and nobody else may. The child
+    // process handle never leaves this function.
+    if (url.pathname === '/claim/status' && req.method === 'GET') {
+      try {
+        const { project: grantedProject } = requireLiveProject(req, { scope: 'work:run' });
+        pruneFinishedClaims();
+        const boundId = projectId(grantedProject.path);
+        const claims = [...claimRuns.values()]
+          .filter((entry) => entry.boundProjectId === boundId)
+          .map((entry) => ({
+            claimId: entry.claimId,
+            taskId: entry.taskId,
+            cloudProjectId: entry.cloudProjectId,
+            projectId: entry.boundProjectId,
+            harness: entry.runtimeId,
+            state: entry.state,
+            startedAt: entry.startedAt,
+            changedAt: entry.changedAt,
+            exitCode: entry.exitCode,
+          }));
+        return json(req, res, {
+          workerId: grants.nodeInstanceId,
+          claims,
+          // When this worker answered — not when anything changed. Each claim
+          // carries its own `changedAt`, which is the one that means something.
+          observedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        if (error instanceof GrantError) return refuse(req, res, error);
+        return refuseSafely(req, res, error, url.pathname);
+      }
+    }
+
     if (url.pathname === '/claim' && req.method === 'POST') {
       try {
         const body = await parseBody(req);
@@ -1723,10 +1816,10 @@ function main() {
         // no task" when the truth is "this route cannot express one".
         //
         // Ion's task-bound runs go through /claim → startLocalClaim, which
-        // tracks them in its OWN `claimRuns` map (claimId + child, keyed
-        // projectId:taskId) with no job record and no status route at all. The
-        // Work board's Running lane needs THAT path emitting state; until the
-        // two stores are reconciled, this route honestly covers dispatch only.
+        // tracks them in its own `claimRuns` map keyed projectId:taskId and
+        // reports through GET /claim/status. The two stores stay separate on
+        // purpose: claims are keyed by the TASK a board holds, jobs by a jobId
+        // no Ion task ever has. This route honestly covers dispatch only.
         harness: job.runtimeId || null,
         projectId: job.project?.id || null,
         workerId: grants.nodeInstanceId,

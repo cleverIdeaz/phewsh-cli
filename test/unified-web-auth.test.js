@@ -6,6 +6,37 @@ const path = require('node:path');
 const root = path.join(__dirname, '..', '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
+// The Ion shell surface. These directories are read WHOLE and joined, rather
+// than naming one file, because the shell is being extracted out of the single
+// 3,446-line page.tsx into component boundaries. Pinning the truth guards below
+// to that one path meant any extraction would relocate the guarded copy into a
+// file no test reads: the assertions would keep passing while protecting
+// nothing, which is strictly worse than a red test. Reading the surface makes
+// the guard follow the code wherever it lands, and makes the doesNotMatch
+// guards stricter (a banned string is banned anywhere in the shell, not just in
+// page.tsx). Add a directory here when the shell grows a new home.
+const ION_SHELL_DIRS = [
+  'intent/app/src/app/app',
+  'intent/app/src/components/ion',
+];
+
+function walkSource(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) return walkSource(p);
+    return /\.(tsx?|jsx?)$/.test(entry.name) ? [p] : [];
+  });
+}
+
+function readIonShell() {
+  const files = ION_SHELL_DIRS.flatMap((dir) => walkSource(path.join(root, dir)));
+  // An empty surface would make every doesNotMatch below vacuously pass. Fail
+  // loudly instead: if this trips, the shell moved and ION_SHELL_DIRS is stale.
+  assert.ok(files.length > 0, 'Ion shell surface is empty — ION_SHELL_DIRS is stale');
+  return { files, source: files.map((file) => fs.readFileSync(file, 'utf8')).join('\n') };
+}
+
 const nav = read('assets/nav.js');
 const delegatedSurfaces = [
   'ion/classic.html',
@@ -53,7 +84,7 @@ test('shared navigation exposes the canonical Workspace without disguising the a
 });
 
 test('the Ion shell explains the real record without sample activity or invented connections', () => {
-  const workspace = read('intent/app/src/app/app/page.tsx');
+  const { source: workspace } = readIonShell();
   assert.match(workspace, /The workspace above every AI workspace\./);
   assert.match(workspace, /decisions, handoffs, evidence, and the exact work waiting on a person/);
   assert.match(workspace, /it never invents sample activity or claims shared model memory/);
