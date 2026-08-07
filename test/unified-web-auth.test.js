@@ -41,7 +41,11 @@ test('shared navigation exposes the canonical Workspace without disguising the a
   // The top bar is trimmed to CLI · Intent · Ion; Workspace stays reachable in the menu.
   assert.doesNotMatch(nav, /class="pn-nav-link">Workspace<\/a>/);
   assert.match(nav, /mi\('\/intent\/app', 'Workspace'/);
-  assert.match(nav, /mi\('\/intent\/dashboard', 'Account'/);
+  // The account dashboard left the mi()-built nav for its own Account section in
+  // the Aug 4 nav rewrite. The behavior under test never changed — it is still a
+  // plainly labelled, reachable row — so assert that, not the helper that built it.
+  assert.match(nav, /<div class="pn-menu-label">Account<\/div>/);
+  assert.match(nav, /href="\/intent\/dashboard" class="pn-menu-item">[^<]*<span>Your projects<\/span>/);
   assert.match(nav, /activeIntentRoute = \['\/intent\/app', '\/intent\/dashboard'\]/);
   assert.match(nav, /if \(activeIntentRoute && href !== activeIntentRoute\) return false/);
   assert.match(read('intent/app/src/components/PhewshNav.tsx'), /href="\/intent\/app"[\s\S]*?<span>My Workspace<\/span>/);

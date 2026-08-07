@@ -29,24 +29,31 @@ test('canonical Project truth and the homepage teach one cross-harness product',
   assert.match(narrativeNext, /Everything below is historical forward narrative/);
   assert.match(read('.intent/status.md'), /## Archive \(historical journal\)/);
 
-  // Hero: cross-provider continuity promise + owned mechanism → five durable
-  // concepts → product map → handoff proof. Ion and connector detail stay below.
+  // Hero: cross-provider continuity promise → five durable concepts → product
+  // map → handoff proof. Ion and connector detail stay below.
+  //
+  // The first viewport deliberately does NOT name the mechanism. The Aug 4
+  // rescue made the opening screen promise + install command + GET CENTERED,
+  // because the converting action had become unreachable; adding `.intent/`
+  // there would compete with it. The mechanism is still taught — the guard is
+  // that it lands after the promise and BEFORE the product map, so a reader
+  // meets the owned folder before they are asked to pick a door.
   const hero = homepage.indexOf('Your project remembers, even when you switch tools.');
-  const heroIntent = homepage.indexOf('Project-owned <code');
   const fiveConcepts = homepage.indexOf('Stop being the copy-and-paste layer');
   const portableTruth = homepage.indexOf('folder you own');
   const productMap = homepage.indexOf('Start with intent. Connect your tools.');
   const boundedProof = homepage.indexOf('Carry forward what was recorded.');
   assert.ok(hero >= 0 && fiveConcepts > hero && productMap > fiveConcepts && boundedProof > productMap,
     'homepage should lead from the continuity promise to the five durable concepts to product map to handoff proof');
-  assert.ok(heroIntent > hero && heroIntent < fiveConcepts,
-    'the first viewport should name the project-owned .intent mechanism');
-  assert.ok(portableTruth > hero,
-    'the page should still name the portable project-owned .intent/ mechanism (now as delivery, below the hero)');
+  assert.ok(portableTruth > hero && portableTruth < productMap,
+    'the page must name the portable project-owned .intent/ mechanism after the promise and before the product map');
   assert.match(homepage, /One project\. Any AI\./);
-  assert.match(homepage, /For solo builders and teams using more than one AI/);
-  assert.match(homepage, /Phewsh keeps goals, decisions, current work, evidence, and handoffs in one portable record/);
-  assert.match(homepage, /No shared model memory &middot; Provider-neutral &middot; User-owned &middot; Evidence-backed/);
+  // The "No shared model memory · Provider-neutral · User-owned · Evidence-backed"
+  // badge row was removed in the Aug 4 rescue, but the claim it protected did not
+  // weaken — it is now stated outright in prose, which is the stronger guard. The
+  // audience line and the "one portable record" summary went with it; the five
+  // durable concepts below already assert that content, so no property is lost.
+  assert.match(homepage, /does not pretend one vendor can transfer another model&rsquo;s memory/);
   for (const concept of ['Intent', 'Current work', 'Decisions', 'Evidence', 'Handoffs']) {
     assert.ok(homepage.includes('>' + concept + '</div>'), `five-concepts section names ${concept}`);
   }
@@ -58,7 +65,8 @@ test('canonical Project truth and the homepage teach one cross-harness product',
   assert.match(homepage, /One project truth across AI tools/);
   assert.match(homepage, /supported AI tools start from the same project truth/);
   assert.match(homepage, /lists what did not move/);
-  assert.match(homepage, /Pull it to your terminal only when you choose/);
+  // "Pull it to your terminal only when you choose" was dropped; the user-control
+  // property it guarded is the optional-sync line already asserted above.
   assert.match(homepage, /when you hand off, the next AI gets recorded project state and an explicit loss list/);
   assert.doesNotMatch(homepage, /it syncs to your terminal|starts grounded, automatically|decisions and outcomes were recorded|every AI tool starts from the same page|briefs every AI harness|Every handoff shows/i);
   assert.match(homepage, /Project truth lives in versioned <code>\.intent\/<\/code> files/);
@@ -71,7 +79,7 @@ test('structured Next uses only now, next, and done and carries the active goal'
   assert.equal(next.items.filter((item) => item.state === 'now').length, 1);
   assert.ok(next.items.every((item) => allowed.has(item.state)));
   const active = next.items.find((item) => item.state === 'now');
-  assert.equal(active.id, 'ship-living-project-layer');
+  assert.equal(active.id, 'ion-daily-driver-miramora');
   // The active goal must always carry a human-verified gate, so no agent can
   // declare the whole goal done on its own.
   assert.ok(active.criteria.some((criterion) => criterion.type === 'human' && /Two real accounts/.test(criterion.expected)));

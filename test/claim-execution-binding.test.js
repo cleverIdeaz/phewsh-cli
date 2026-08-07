@@ -19,7 +19,22 @@ const path = require('node:path');
 const { request, pair, listProjects, grantFor, projHdr } = require('./helpers/grants');
 
 const BIN = path.join(__dirname, '..', 'bin', 'phewsh.js');
-const PORT = 7400 + Math.floor(Math.random() * 120);
+// Test port bands must never contain a RESERVED RUNTIME PORT. This band used to
+// be 7400+rand(120) = 7400–7519, which straddles **7483 — the default
+// `phewsh serve` port**. Any developer with Desktop open (Desktop starts serve)
+// could have this suite talk to their real node instead of its fixture, and the
+// collision is silent: `waitForNode` succeeds against whichever node answers,
+// the approval code prints on the other process, and it surfaces only as
+// "the node never displayed an approval code".
+//
+// Reserved: 7483 (`phewsh serve` default). Bands in use, base + ~12 offsets:
+//   7560–7631 local-session      7660–7731 mcp-http-binding
+//   7760–7811 cancellation       7840–7891 closure-endpoints
+//   7940–7991 dispatch-binding   8100–8311 serve-bridge
+//   8500–8611 endpoint-policy    8700–8771 ground-project
+//   8800–8891 critic-findings
+// 7992–8099 is the free gap; this file needs 8 ports (offsets 0–7).
+const PORT = 8000 + Math.floor(Math.random() * 80);
 const CLOUD_ID = '11111111-1111-4111-8111-111111111111';
 const TASK_ID = '22222222-2222-4222-8222-222222222222';
 const OTHER_TASK_ID = '33333333-3333-4333-8333-333333333333';

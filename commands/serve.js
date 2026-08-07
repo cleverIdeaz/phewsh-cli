@@ -19,6 +19,9 @@ const path = require('path');
 const fs = require('fs');
 const { corsHeaders, isAllowedRequest, requestOrigin } = require('../lib/cors');
 const { createGrantStore, GrantError } = require('../lib/capability-grants');
+// The job-state contract. Translation lives at the boundary, not in the job
+// records themselves, so serve.js keeps its own vocabulary. See lib/worker-state.js.
+const workerState = require('../lib/worker-state');
 const configFile = require('../lib/config-file');
 const { containedPath } = require('../lib/truth-path');
 const { boundedAppend } = require('../lib/bounded-output');
@@ -1707,6 +1710,34 @@ function main() {
         statusText: job.statusText,
         result: job.result,
         error: job.error,
+        // The contract state, alongside — never instead of — the node's own
+        // vocabulary. Ion renders `state`; existing callers keep reading
+        // `status`, so translating at this boundary means renaming an internal
+        // later cannot silently change what a surface displays. Null when the
+        // status has no mapping: unknown must read as unknown.
+        state: workerState.jobStateOf(job),
+        // NO taskId HERE, DELIBERATELY. Only /dispatch creates a `jobs` entry,
+        // and its contract comes from buildActionContract, which has no claim
+        // and therefore never sets boundTaskId — so a `taskId` field on this
+        // route would be structurally always null. That reads as "this run has
+        // no task" when the truth is "this route cannot express one".
+        //
+        // Ion's task-bound runs go through /claim → startLocalClaim, which
+        // tracks them in its OWN `claimRuns` map (claimId + child, keyed
+        // projectId:taskId) with no job record and no status route at all. The
+        // Work board's Running lane needs THAT path emitting state; until the
+        // two stores are reconciled, this route honestly covers dispatch only.
+        harness: job.runtimeId || null,
+        projectId: job.project?.id || null,
+        workerId: grants.nodeInstanceId,
+        startedAt: job.startedAt || null,
+        // When the NODE ANSWERED — deliberately not named `updatedAt`. serve.js
+        // does not currently stamp a timestamp on each status transition, so a
+        // job that finished ten minutes ago would report "updated: now" on every
+        // poll and a wedged run would look freshly active. Detecting a wedged
+        // job needs a real transition time; until each `job.status = …` carries
+        // one, this says only what it can honestly say.
+        observedAt: new Date().toISOString(),
       });
     }
 
