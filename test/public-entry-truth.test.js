@@ -327,7 +327,17 @@ test('shared live entry surfaces use one bounded promise contract', () => {
   assert.match(ionApp, /Phewsh Ion/);
   assert.match(ionApp, /The workspace above every AI workspace/);
   assert.match(homepage, /unrecorded conversation stays tool-local/);
-  assert.match(founder, /same recorded truth,\s+with the handoff boundary visible/);
+  // The founder page was deliberately redesigned on 2026-08-07 (Neal) and no
+  // longer carries the long sentence this used to pin. Asserting one exact
+  // sentence made this guard brittle against any legitimate rewrite, which is
+  // how it ended up red on shipped, intentional work.
+  //
+  // The protection that MATTERS is unchanged: `founder` is part of `combined`,
+  // so every overclaim assertion at the bottom of this test still covers it —
+  // it still cannot say context follows you, that transcripts sync, or that
+  // every AI tool starts on the same page. What is asserted here now is only
+  // that the page still makes a bounded continuity claim at all.
+  assert.match(founder, /continuity layer/i);
   assert.match(cliPage, /Their capabilities and transcripts remain separate/);
   assert.match(session, /supported adapters can read it; native transcripts do not move/);
   assert.match(ui, /Native transcripts stay with their tool/);
